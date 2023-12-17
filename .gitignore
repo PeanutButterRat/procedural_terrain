@@ -1,0 +1,8 @@
+# Rider ignores
+.idea/
+__pycache__/
+Debug/
+*.vcxproj*
+
+# C++ ignores
+*.obj
