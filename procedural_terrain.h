@@ -34,7 +34,6 @@ class ProceduralTerrain : public Node3D {
     Ref<FastNoiseLite> noise;
     real_t height_scale;
     Ref<Curve> height_curve;
-    int level_of_detail;
     NodePath observer;
     Array visible_chunks;
     Dictionary generated_chunks;

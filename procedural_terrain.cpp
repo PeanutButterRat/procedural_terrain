@@ -277,7 +277,6 @@ ProceduralTerrain::ProceduralTerrain() {
 	lacunarity = 1.0f;
 	persistence = 1.0f;
 	height_scale = 1.0f;
-	level_of_detail = 0;
 	view_distance = 300.0f;
 	PackedFloat32Array thresholds{};
 	thresholds.resize(max_level_of_detail + 1);
