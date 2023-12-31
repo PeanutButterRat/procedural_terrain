@@ -272,7 +272,10 @@ void ProceduralTerrain::_update() {
 					while (level_of_detail < view_thresholds.size() - 1 && distance_to_chunk <= view_thresholds[level_of_detail + 1]) {
 						level_of_detail++;
 					}
-					chunk->request_mesh(level_of_detail);
+
+					if (!noise.is_null() && !height_curve.is_null()) {
+						chunk->request_mesh(level_of_detail);
+					}
 					visible_chunks.append(chunk);
 				}
 			}
@@ -283,8 +286,8 @@ void ProceduralTerrain::_update() {
 Ref<Mesh> ProceduralTerrain::generate_chunk(const Ref<FastNoiseLite>& noise, const Ref<Curve>& height_curve, const int level_of_detail,
 	const Ref<StandardMaterial3D>& material, const int octaves, const real_t persistence, const real_t lacunarity, const real_t height_scale) {
 	
-	const Array matrix = _generate_matrix(octaves, noise, persistence, height_scale);
-	const Ref<ArrayMesh> mesh = _generate_mesh(matrix, level_of_detail, height_curve, lacunarity);
+	const Array matrix = _generate_matrix(octaves, noise, persistence, lacunarity);
+	const Ref<ArrayMesh> mesh = _generate_mesh(matrix, level_of_detail, height_curve, height_scale);
 	
 	if (!material.is_null()) {
 		_generate_material(matrix, material);
