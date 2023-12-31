@@ -40,6 +40,7 @@ class ProceduralTerrain : public Node3D {
     Dictionary generated_chunks;
     Dictionary threads;
     real_t view_distance;
+    PackedFloat32Array view_thresholds;
     
 public:
     void set_octaves(int p_octaves);
@@ -60,14 +61,14 @@ public:
     void set_height_curve(const Ref<Curve> &p_height_curve);
     Ref<Curve> get_height_curve() const;
 
-    void set_level_of_detail(int p_level_of_detail);
-    int get_level_of_detail() const;
-
     void set_observer(const NodePath& p_observer);
     NodePath get_observer() const;
 
     void set_view_distance(real_t p_view_distance);
     real_t get_view_distance() const;
+
+    void set_view_thresholds(PackedFloat32Array p_view_thresholds);
+    PackedFloat32Array get_view_thresholds() const;
 
     static Ref<Mesh> generate_chunk(const Ref<FastNoiseLite>& noise, const Ref<Curve>& height_curve, int level_of_detail,
         const Ref<StandardMaterial3D>& material, int octaves, real_t persistence, real_t lacunarity, real_t height_scale);
@@ -80,7 +81,7 @@ protected:
 
 private:
     void _update();
-    void _update_chunk_visibility(Chunk* chunk);
+    float _get_distance_to_chunk(const Chunk* chunk) const;
 
     static Array _generate_matrix(int octaves, const Ref<FastNoiseLite>& noise, real_t persistence, real_t lacunarity);
     static Ref<ArrayMesh> _generate_mesh(const Array& matrix, int level_of_detail, const Ref<Curve>& height_curve, real_t height_scale);

@@ -47,14 +47,14 @@ void ProceduralTerrain::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_height_curve", "curve"), &ProceduralTerrain::set_height_curve);
 	ClassDB::bind_method(D_METHOD("get_height_curve"), &ProceduralTerrain::get_height_curve);
 
-	ClassDB::bind_method(D_METHOD("set_level_of_detail", "level_of_detail"), &ProceduralTerrain::set_level_of_detail);
-	ClassDB::bind_method(D_METHOD("get_level_of_detail"), &ProceduralTerrain::get_level_of_detail);
-
 	ClassDB::bind_method(D_METHOD("set_observer", "observer"), &ProceduralTerrain::set_observer);
 	ClassDB::bind_method(D_METHOD("get_observer"), &ProceduralTerrain::get_observer);
 
 	ClassDB::bind_method(D_METHOD("set_view_distance", "view_distance"), &ProceduralTerrain::set_view_distance);
 	ClassDB::bind_method(D_METHOD("get_view_distance"), &ProceduralTerrain::get_view_distance);
+
+	ClassDB::bind_method(D_METHOD("set_view_thresholds", "view_thresholds"), &ProceduralTerrain::set_view_thresholds);
+	ClassDB::bind_method(D_METHOD("get_view_thresholds"), &ProceduralTerrain::get_view_thresholds);
 
 	ClassDB::bind_static_method("ProceduralTerrain",
 		D_METHOD("generate_chunk", "noise", "height_curve", "level_of_detail", "material", "octaves", "persistence", "lacunarity", "height_scale"),
@@ -67,11 +67,11 @@ void ProceduralTerrain::_bind_methods() {
 	
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "observer", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D"), "set_observer", "get_observer");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "view_distance"), "set_view_distance", "get_view_distance");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_FLOAT32_ARRAY, "view_thresholds"), "set_view_thresholds", "get_view_thresholds");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "noise", PROPERTY_HINT_RESOURCE_TYPE, "FastNoiseLite"), "set_noise", "get_noise");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "octaves", PROPERTY_HINT_RANGE, itos(min_octaves) + "," + itos(max_octaves) + ",1"), "set_octaves", "get_octaves");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "lacunarity"), "set_lacunarity", "get_lacunarity");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "persistence"), "set_persistence", "get_persistence");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "level_of_detail", PROPERTY_HINT_RANGE, itos(min_level_of_detail) + "," + itos(max_level_of_detail) + ",1"), "set_level_of_detail", "get_level_of_detail");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "height_scale"), "set_height_scale", "get_height_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "height_curve", PROPERTY_HINT_RESOURCE_TYPE, "Curve"), "set_height_curve", "get_height_curve");
 }
@@ -83,6 +83,8 @@ void ProceduralTerrain::_notification(const int p_what) {
 }
 
 void Chunk::request_mesh(int level_of_detail) {
+	level_of_detail = CLAMP(level_of_detail, min_level_of_detail, max_level_of_detail);
+	
 	if (resource_threads.has(level_of_detail)) {
 		const Ref<core_bind::Thread> thread = resource_threads[level_of_detail];
 		if (!thread->is_alive()) {
@@ -103,7 +105,7 @@ void Chunk::request_mesh(int level_of_detail) {
 		thread->start(Callable{terrain, "generate_chunk"}.bind(
 			terrain->get("noise").duplicate(),
 			terrain->get("height_curve").duplicate(),
-			terrain->get("level_of_detail"),
+			level_of_detail,
 			material,
 			terrain->get("octaves"),
 			terrain->get("persistence"),
@@ -173,14 +175,6 @@ Ref<Curve> ProceduralTerrain::get_height_curve() const {
 	return height_curve;
 }
 
-void ProceduralTerrain::set_level_of_detail(const int p_level_of_detail) {
-	level_of_detail = CLAMP(p_level_of_detail, min_level_of_detail, max_level_of_detail);
-}
-
-int ProceduralTerrain::get_level_of_detail() const {
-	return level_of_detail;
-}
-
 void ProceduralTerrain::set_observer(const NodePath& p_observer) {
 	observer = p_observer;
 }
@@ -195,6 +189,17 @@ void ProceduralTerrain::set_view_distance(const real_t p_view_distance) {
 
 real_t ProceduralTerrain::get_view_distance() const {
 	return view_distance;
+}
+
+void ProceduralTerrain::set_view_thresholds(PackedFloat32Array p_view_thresholds) {
+	p_view_thresholds.resize(max_level_of_detail + 1);
+	p_view_thresholds.sort();
+	p_view_thresholds.reverse();
+	view_thresholds = p_view_thresholds;
+}
+
+PackedFloat32Array ProceduralTerrain::get_view_thresholds() const {
+	return view_thresholds;
 }
 
 void ProceduralTerrain::_update() {
@@ -218,16 +223,25 @@ void ProceduralTerrain::_update() {
 				if (!generated_chunks.has(chunk_coordinates)) {
 					Chunk* chunk = memnew(Chunk);
 					generated_chunks[chunk_coordinates] = chunk;
-					add_child(chunk);
+					chunk->set_name("__Chunk " + chunk_coordinates);
+					add_child(chunk, false, INTERNAL_MODE_BACK);
 					
 					const Vector2 chunk_position = chunk_coordinates * chunk_size;
 					chunk->set_position(Vector3(chunk_position.x, 0, chunk_position.y));
 				}
 				
 				Chunk* chunk = cast_to<Chunk>(generated_chunks[chunk_coordinates]);
-				chunk->request_mesh(max_level_of_detail);
-				
-				_update_chunk_visibility(chunk);
+				const float distance_to_chunk = _get_distance_to_chunk(chunk);
+				chunk->set_visible(distance_to_chunk <= view_distance);
+
+				if (chunk->is_visible()) {
+					int level_of_detail = 0;
+					while (level_of_detail < view_thresholds.size() - 1 && distance_to_chunk <= view_thresholds[level_of_detail + 1]) {
+						level_of_detail++;
+					}
+					chunk->request_mesh(level_of_detail);
+					visible_chunks.append(chunk);
+				}
 			}
 		}
 	}
@@ -246,7 +260,7 @@ Ref<Mesh> ProceduralTerrain::generate_chunk(const Ref<FastNoiseLite>& noise, con
 	return mesh;
 }
 
-void ProceduralTerrain::_update_chunk_visibility(Chunk* chunk) {
+float ProceduralTerrain::_get_distance_to_chunk(const Chunk* chunk) const {
 	const Vector3 start = chunk->get_position();
 	const Vector3 end = chunk->get_position() + chunk->get_aabb().size;
 	const Vector3 point_of_reference = dynamic_cast<Node3D*>(get_node(observer))->get_global_position() - get_global_position();
@@ -254,15 +268,8 @@ void ProceduralTerrain::_update_chunk_visibility(Chunk* chunk) {
 	real_t dy = MAX(start.z - point_of_reference.z, point_of_reference.z - end.z);
 	dx = MAX(dx, 0);
 	dy = MAX(dy, 0);
-
-	const real_t MINIMUM_DISTANCE_TO_CHUNK = sqrt(dx * dx + dy * dy);
 	
-	if (MINIMUM_DISTANCE_TO_CHUNK <= view_distance) {
-		chunk->set_visible(true);
-		visible_chunks.append(chunk);
-	} else {
-		chunk->set_visible(false);
-	}
+	return sqrt(dx * dx + dy * dy);
 }
 
 ProceduralTerrain::ProceduralTerrain() {
@@ -272,7 +279,10 @@ ProceduralTerrain::ProceduralTerrain() {
 	height_scale = 1.0f;
 	level_of_detail = 0;
 	view_distance = 300.0f;
-	
+	PackedFloat32Array thresholds{};
+	thresholds.resize(max_level_of_detail + 1);
+	thresholds.fill(0.0f);
+	set_view_thresholds(thresholds);
 	set_process_internal(true);
 }
 
@@ -285,9 +295,9 @@ Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoise
 	rng.set_seed(noise->get_seed());
 	
 	for (int i = 0; i < octaves; i++) {
-		const real_t X = rng.randf_range(-max_offset, max_offset);
-		const real_t Y = rng.randf_range(-max_offset, max_offset);
-		offsets[i] = Vector2(X, Y);
+		const real_t x = rng.randf_range(-max_offset, max_offset);
+		const real_t y = rng.randf_range(-max_offset, max_offset);
+		offsets[i] = Vector2(x, y);
 	}
 	
 	int index = 0;
