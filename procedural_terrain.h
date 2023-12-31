@@ -37,9 +37,9 @@ class ProceduralTerrain : public Node3D {
     NodePath observer;
     Array visible_chunks;
     Dictionary generated_chunks;
-    Dictionary threads;
     real_t view_distance;
     PackedFloat32Array view_thresholds;
+    bool reset_chunks_on_change;
     
 public:
     void set_octaves(int p_octaves);
@@ -69,6 +69,11 @@ public:
     void set_view_thresholds(PackedFloat32Array p_view_thresholds);
     PackedFloat32Array get_view_thresholds() const;
 
+    void set_reset_chunks_on_change(bool p_reset_chunks_on_change);
+    bool get_reset_chunks_on_change() const;
+    
+    void reset_chunks();
+    
     static Ref<Mesh> generate_chunk(const Ref<FastNoiseLite>& noise, const Ref<Curve>& height_curve, int level_of_detail,
         const Ref<StandardMaterial3D>& material, int octaves, real_t persistence, real_t lacunarity, real_t height_scale);
     

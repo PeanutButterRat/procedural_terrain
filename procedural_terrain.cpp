@@ -16,6 +16,8 @@
 
 #include <limits>
 
+#define RESET_CHUNKS_ON_CHANGE if (reset_chunks_on_change) { reset_chunks(); }
+
 constexpr int matrix_size = 241;
 constexpr real_t half_matrix_size = matrix_size / 2.0f;
 constexpr real_t max_offset = 100'000.0f;
@@ -56,6 +58,11 @@ void ProceduralTerrain::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_view_thresholds", "view_thresholds"), &ProceduralTerrain::set_view_thresholds);
 	ClassDB::bind_method(D_METHOD("get_view_thresholds"), &ProceduralTerrain::get_view_thresholds);
 
+	ClassDB::bind_method(D_METHOD("set_reset_chunks_on_change", "value"), &ProceduralTerrain::set_reset_chunks_on_change);
+	ClassDB::bind_method(D_METHOD("get_reset_chunks_on_change"), &ProceduralTerrain::get_reset_chunks_on_change);
+
+	ClassDB::bind_method(D_METHOD("reset_chunks"), &ProceduralTerrain::reset_chunks);
+	
 	ClassDB::bind_static_method("ProceduralTerrain",
 		D_METHOD("generate_chunk", "noise", "height_curve", "level_of_detail", "material", "octaves", "persistence", "lacunarity", "height_scale"),
 		&generate_chunk, DEFVAL(Ref<StandardMaterial3D>{}), DEFVAL(min_octaves), DEFVAL(1.0f), DEFVAL(1.0f), DEFVAL(1.0f));
@@ -64,7 +71,8 @@ void ProceduralTerrain::_bind_methods() {
 	BIND_CONSTANT(max_level_of_detail);
 	BIND_CONSTANT(min_octaves);
 	BIND_CONSTANT(max_octaves);
-	
+
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "reset_chunks_on_change"), "set_reset_chunks_on_change", "get_reset_chunks_on_change");
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "observer", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D"), "set_observer", "get_observer");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "view_distance"), "set_view_distance", "get_view_distance");
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_FLOAT32_ARRAY, "view_thresholds"), "set_view_thresholds", "get_view_thresholds");
@@ -128,6 +136,7 @@ Chunk::~Chunk() {
 }
 
 void ProceduralTerrain::set_octaves(const int p_octaves) {
+	RESET_CHUNKS_ON_CHANGE
 	octaves = CLAMP(p_octaves, min_octaves, max_octaves);
 }
 
@@ -136,6 +145,7 @@ int ProceduralTerrain::get_octaves() const {
 }
 
 void ProceduralTerrain::set_lacunarity(const real_t p_lacunarity) {
+	RESET_CHUNKS_ON_CHANGE
 	lacunarity = p_lacunarity;
 }
 
@@ -144,6 +154,7 @@ real_t ProceduralTerrain::get_lacunarity() const {
 }
 
 void ProceduralTerrain::set_persistence(const real_t p_persistence) {
+	RESET_CHUNKS_ON_CHANGE
 	persistence = p_persistence;
 }
 
@@ -152,6 +163,7 @@ real_t ProceduralTerrain::get_persistence() const {
 }
 
 void ProceduralTerrain::set_height_scale(const real_t p_height_scale) {
+	RESET_CHUNKS_ON_CHANGE
 	height_scale = p_height_scale;
 }
 
@@ -160,6 +172,7 @@ real_t ProceduralTerrain::get_height_scale() const {
 }
 
 void ProceduralTerrain::set_noise(const Ref<FastNoiseLite>& p_noise) {
+	RESET_CHUNKS_ON_CHANGE
 	noise = p_noise;
 }
 
@@ -168,6 +181,7 @@ Ref<FastNoiseLite> ProceduralTerrain::get_noise() const {
 }
 
 void ProceduralTerrain::set_height_curve(const Ref<Curve>& p_height_curve) {
+	RESET_CHUNKS_ON_CHANGE
 	height_curve = p_height_curve;
 }
 
@@ -176,6 +190,7 @@ Ref<Curve> ProceduralTerrain::get_height_curve() const {
 }
 
 void ProceduralTerrain::set_observer(const NodePath& p_observer) {
+	RESET_CHUNKS_ON_CHANGE
 	observer = p_observer;
 }
 
@@ -200,6 +215,24 @@ void ProceduralTerrain::set_view_thresholds(PackedFloat32Array p_view_thresholds
 
 PackedFloat32Array ProceduralTerrain::get_view_thresholds() const {
 	return view_thresholds;
+}
+
+void ProceduralTerrain::set_reset_chunks_on_change(bool p_reset_chunks_on_change) {
+	reset_chunks_on_change = p_reset_chunks_on_change;
+}
+
+bool ProceduralTerrain::get_reset_chunks_on_change() const {
+	return reset_chunks_on_change;
+}
+
+void ProceduralTerrain::reset_chunks() {
+	const Array chunks = generated_chunks.values();
+	for (int i = 0; i < chunks.size(); i++) {
+		Chunk* chunk = cast_to<Chunk>(chunks[i]);
+		chunk->queue_free();
+	}
+	generated_chunks.clear();
+	visible_chunks.clear();
 }
 
 void ProceduralTerrain::_update() {
@@ -278,9 +311,8 @@ ProceduralTerrain::ProceduralTerrain() {
 	persistence = 1.0f;
 	height_scale = 1.0f;
 	view_distance = 300.0f;
-	PackedFloat32Array thresholds{};
-	thresholds.resize(max_level_of_detail + 1);
-	thresholds.fill(0.0f);
+	reset_chunks_on_change = true;
+	const PackedFloat32Array thresholds = {100, 150, 200, 250, 300, 350, 400};
 	set_view_thresholds(thresholds);
 	set_process_internal(true);
 }
