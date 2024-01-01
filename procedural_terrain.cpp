@@ -242,16 +242,20 @@ void ProceduralTerrain::_update() {
 	visible_chunks.clear();
 	
 	const Node3D* observer_node = has_node(observer) ? cast_to<Node3D>(get_node(observer)) : nullptr;
-
+	
 	if (observer_node != nullptr) {
-		const real_t x = round((observer_node->get_global_position() - get_global_position()).x / chunk_size);
-		const real_t y = round((observer_node->get_global_position() - get_global_position()).z / chunk_size);
-		const int chunks_in_view_distance = round(view_distance / chunk_size);
-
-		for (int y_offset = -chunks_in_view_distance; y_offset <= chunks_in_view_distance; y_offset++) {
-			for (int x_offset = -chunks_in_view_distance; x_offset <= chunks_in_view_distance; x_offset++) {
+		const Vector2 relative_observer_position {
+			(observer_node->get_global_position() - get_global_position()).x,
+			(observer_node->get_global_position() - get_global_position()).z
+		};
+		const real_t x = round(relative_observer_position.x / (chunk_size * get_scale().x));
+		const real_t y = round(relative_observer_position.y / (chunk_size * get_scale().z));
+		const int chunks_in_view_distance_x = round(view_distance / (chunk_size * get_scale().x));
+		const int chunks_in_view_distance_y = round(view_distance / (chunk_size * get_scale().z));
+		
+		for (int y_offset = -chunks_in_view_distance_y; y_offset <= chunks_in_view_distance_y; y_offset++) {
+			for (int x_offset = -chunks_in_view_distance_x; x_offset <= chunks_in_view_distance_x; x_offset++) {
 				const Vector2 chunk_coordinates = Vector2(x + x_offset, y + y_offset);
-
 				if (!generated_chunks.has(chunk_coordinates)) {
 					Chunk* chunk = memnew(Chunk);
 					generated_chunks[chunk_coordinates] = chunk;
@@ -296,9 +300,11 @@ Ref<Mesh> ProceduralTerrain::generate_chunk(const Ref<FastNoiseLite>& noise, con
 }
 
 float ProceduralTerrain::_get_distance_to_chunk(const Chunk* chunk) const {
-	const Vector3 start = chunk->get_position();
-	const Vector3 end = chunk->get_position() + chunk->get_aabb().size;
-	const Vector3 point_of_reference = dynamic_cast<Node3D*>(get_node(observer))->get_global_position() - get_global_position();
+	const Vector3 start = chunk->get_global_position();
+	Vector3 end = chunk->get_global_position();
+	end.x += chunk->get_aabb().size.x * get_scale().x;
+	end.z += chunk->get_aabb().size.z * get_scale().z;
+	const Vector3 point_of_reference = dynamic_cast<Node3D*>(get_node(observer))->get_global_position();
 	real_t dx = MAX(start.x - point_of_reference.x, point_of_reference.x - end.x);
 	real_t dy = MAX(start.z - point_of_reference.z, point_of_reference.z - end.z);
 	dx = MAX(dx, 0);
