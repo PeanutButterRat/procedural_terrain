@@ -14,20 +14,18 @@
 
 #include "modules/noise/fastnoise_lite.h"
 
-#include <limits>
-
 #define RESET_CHUNKS_ON_CHANGE if (reset_chunks_on_change) { reset_chunks(); }
 
 constexpr int matrix_size = 241;
 constexpr real_t half_matrix_size = matrix_size / 2.0f;
 constexpr real_t max_offset = 100'000.0f;
 constexpr real_t center_offset = (matrix_size - 1) / 2.0f;
-constexpr real_t maximum_real_t_magnitude = std::numeric_limits<real_t>::max();
 constexpr int min_octaves = 1;
 constexpr int max_octaves = 10;
 constexpr int min_level_of_detail = 0;
 constexpr int max_level_of_detail = 6;
 constexpr int chunk_size = matrix_size - 1;
+constexpr real_t normalization_factor = 0.9f;
 
 
 void ProceduralTerrain::_bind_methods() {
@@ -64,8 +62,8 @@ void ProceduralTerrain::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("reset_chunks"), &ProceduralTerrain::reset_chunks);
 	
 	ClassDB::bind_static_method("ProceduralTerrain",
-		D_METHOD("generate_chunk", "noise", "height_curve", "level_of_detail", "material", "octaves", "persistence", "lacunarity", "height_scale"),
-		&generate_chunk, DEFVAL(Ref<StandardMaterial3D>{}), DEFVAL(min_octaves), DEFVAL(1.0f), DEFVAL(1.0f), DEFVAL(1.0f));
+		D_METHOD("generate_chunk", "noise", "height_curve", "level_of_detail", "material", "octaves", "persistence", "lacunarity", "height_scale", "offset"),
+		&generate_chunk, DEFVAL(Ref<StandardMaterial3D>{}), DEFVAL(min_octaves), DEFVAL(1.0f), DEFVAL(1.0f), DEFVAL(1.0f), DEFVAL(Vector2{}));
 	
 	BIND_CONSTANT(min_level_of_detail);
 	BIND_CONSTANT(max_level_of_detail);
@@ -118,7 +116,8 @@ void Chunk::request_mesh(int level_of_detail) {
 			terrain->get("octaves"),
 			terrain->get("persistence"),
 			terrain->get("lacunarity"),
-			terrain->get("height_scale")
+			terrain->get("height_scale"),
+			Vector2{get_position().x, get_position().z}
 		));
 	}
 	
@@ -284,9 +283,9 @@ void ProceduralTerrain::_update() {
 }
 
 Ref<Mesh> ProceduralTerrain::generate_chunk(const Ref<FastNoiseLite>& noise, const Ref<Curve>& height_curve, const int level_of_detail,
-	const Ref<StandardMaterial3D>& material, const int octaves, const real_t persistence, const real_t lacunarity, const real_t height_scale) {
-	
-	const Array matrix = _generate_matrix(octaves, noise, persistence, lacunarity);
+	const Ref<StandardMaterial3D>& material, const int octaves, const real_t persistence, const real_t lacunarity, const real_t height_scale, Vector2 offset) {
+
+	const Array matrix = _generate_matrix(octaves, noise, persistence, lacunarity, offset);
 	const Ref<ArrayMesh> mesh = _generate_mesh(matrix, level_of_detail, height_curve, height_scale);
 	
 	if (!material.is_null()) {
@@ -320,24 +319,28 @@ ProceduralTerrain::ProceduralTerrain() {
 	set_process_internal(true);
 }
 
-Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoiseLite>& noise, const real_t persistence, const real_t lacunarity) {
+Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoiseLite>& noise, const real_t persistence, const real_t lacunarity, Vector2 offset) {
 	Array matrix{};
 	matrix.resize(matrix_size * matrix_size);
 	Array offsets{};
 	offsets.resize(octaves);
 	RandomNumberGenerator rng{};
 	rng.set_seed(noise->get_seed());
+
+	real_t max_possible_height = 0.0f;
+	real_t max_possible_amplitude = 1.0f;
 	
 	for (int i = 0; i < octaves; i++) {
-		const real_t x = rng.randf_range(-max_offset, max_offset);
-		const real_t y = rng.randf_range(-max_offset, max_offset);
+		const real_t x = rng.randf_range(-max_offset, max_offset) + offset.x;
+		const real_t y = rng.randf_range(-max_offset, max_offset) + offset.y;
 		offsets[i] = Vector2(x, y);
+
+		max_possible_height += max_possible_amplitude;
+		max_possible_amplitude *= persistence;
 	}
 	
 	int index = 0;
-	real_t minimum = maximum_real_t_magnitude;
-	real_t maximum = -maximum_real_t_magnitude;
-	
+
 	for (int y = 0; y < matrix_size; y++) {
 		for (int x = 0; x < matrix_size; x++) {
 			real_t amplitude = 1.0f;
@@ -346,21 +349,15 @@ Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoise
 			
 			for (int octave = 0; octave < octaves; octave++) {
 				const Vector2 offset = offsets[octave];
-				const Vector2 sample_location {
-					(x - half_matrix_size) * frequency + offset.x,
-					(y - half_matrix_size) * frequency + offset.y,
-				};
-				
-				const real_t sample = noise->get_noise_2d(sample_location.x, sample_location.y);
+				const real_t sample_x = (x - half_matrix_size + offset.x) * frequency;
+				const real_t sample_y = (y - half_matrix_size + offset.y) * frequency;
+				const real_t sample = noise->get_noise_2d(sample_x, sample_y);
 				final_value += sample * amplitude;
 				amplitude *= persistence;
 				frequency *= lacunarity;
 			}
 
 			matrix[y * matrix_size + x] = final_value;
-			
-			minimum = MIN(minimum, final_value);
-			maximum = MAX(maximum, final_value);
 			index++;
 		}
 	}
@@ -369,7 +366,9 @@ Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoise
 
 	for (int y = 0; y < matrix_size; y++) {
 		for (int x = 0; x < matrix_size; x++) {
-			matrix[index] = Math::inverse_lerp(minimum, maximum, matrix[index]);
+			const real_t bounds = max_possible_height * normalization_factor;
+			const real_t normalized_height = Math::inverse_lerp(-bounds, bounds, matrix[index]);
+			matrix[index] = normalized_height;
 			index++;
 		}
 	}

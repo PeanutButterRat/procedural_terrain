@@ -75,7 +75,7 @@ public:
     void reset_chunks();
     
     static Ref<Mesh> generate_chunk(const Ref<FastNoiseLite>& noise, const Ref<Curve>& height_curve, int level_of_detail,
-        const Ref<StandardMaterial3D>& material, int octaves, real_t persistence, real_t lacunarity, real_t height_scale);
+        const Ref<StandardMaterial3D>& material, int octaves, real_t persistence, real_t lacunarity, real_t height_scale, Vector2 offset);
     
     ProceduralTerrain();
 
@@ -87,7 +87,7 @@ private:
     void _update();
     float _get_distance_to_chunk(const Chunk* chunk) const;
 
-    static Array _generate_matrix(int octaves, const Ref<FastNoiseLite>& noise, real_t persistence, real_t lacunarity);
+    static Array _generate_matrix(int octaves, const Ref<FastNoiseLite>& noise, real_t persistence, real_t lacunarity, Vector2 offset);
     static Ref<ArrayMesh> _generate_mesh(const Array& matrix, int level_of_detail, const Ref<Curve>& height_curve, real_t height_scale);
     static void ProceduralTerrain::_generate_material(const Array& matrix, const Ref<StandardMaterial3D>& material);
 };
