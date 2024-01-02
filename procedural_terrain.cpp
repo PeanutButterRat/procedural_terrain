@@ -1,5 +1,7 @@
 #include "procedural_terrain.h"
 
+#include <complex.h>
+
 
 #include "scene/resources/curve.h"
 #include "scene/resources/texture.h"
@@ -59,11 +61,14 @@ void ProceduralTerrain::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_reset_chunks_on_change", "value"), &ProceduralTerrain::set_reset_chunks_on_change);
 	ClassDB::bind_method(D_METHOD("get_reset_chunks_on_change"), &ProceduralTerrain::get_reset_chunks_on_change);
 
+	ClassDB::bind_method(D_METHOD("set_falloff_parameters", "parameters"), &ProceduralTerrain::set_falloff_parameters);
+	ClassDB::bind_method(D_METHOD("get_falloff_parameters"), &ProceduralTerrain::get_falloff_parameters);
+	
 	ClassDB::bind_method(D_METHOD("reset_chunks"), &ProceduralTerrain::reset_chunks);
 	
 	ClassDB::bind_static_method("ProceduralTerrain",
-		D_METHOD("generate_chunk", "noise", "height_curve", "level_of_detail", "material", "octaves", "persistence", "lacunarity", "height_scale", "offset"),
-		&generate_chunk, DEFVAL(Ref<StandardMaterial3D>{}), DEFVAL(min_octaves), DEFVAL(1.0f), DEFVAL(1.0f), DEFVAL(1.0f), DEFVAL(Vector2{}));
+		D_METHOD("generate_chunk", "noise", "height_curve", "level_of_detail", "material", "octaves", "persistence", "lacunarity", "height_scale", "offset", "falloff_parameters"),
+		&generate_chunk, DEFVAL(Ref<StandardMaterial3D>{}), DEFVAL(min_octaves), DEFVAL(1.0f), DEFVAL(1.0f), DEFVAL(1.0f), DEFVAL(Vector2{}), DEFVAL(Vector2{}));
 	
 	BIND_CONSTANT(min_level_of_detail);
 	BIND_CONSTANT(max_level_of_detail);
@@ -80,6 +85,7 @@ void ProceduralTerrain::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "persistence"), "set_persistence", "get_persistence");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "height_scale"), "set_height_scale", "get_height_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "height_curve", PROPERTY_HINT_RESOURCE_TYPE, "Curve"), "set_height_curve", "get_height_curve");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "falloff_parameters"), "set_falloff_parameters", "get_falloff_parameters");
 }
 
 void ProceduralTerrain::_notification(const int p_what) {
@@ -101,6 +107,7 @@ void Chunk::request_mesh(int level_of_detail) {
 	else if (!meshes.has(level_of_detail)) {
 		Ref<StandardMaterial3D> material{};
 		material.instantiate();
+		material->set_texture_filter(BaseMaterial3D::TEXTURE_FILTER_NEAREST);
 		materials[level_of_detail] = material;
 		
 		Ref<core_bind::Thread> thread{};
@@ -117,7 +124,8 @@ void Chunk::request_mesh(int level_of_detail) {
 			terrain->get("persistence"),
 			terrain->get("lacunarity"),
 			terrain->get("height_scale"),
-			Vector2{get_position().x, get_position().z}
+			Vector2{get_position().x, get_position().z},
+			terrain->get("falloff_parameters")
 		));
 	}
 	
@@ -224,6 +232,15 @@ bool ProceduralTerrain::get_reset_chunks_on_change() const {
 	return reset_chunks_on_change;
 }
 
+void ProceduralTerrain::set_falloff_parameters(Vector2 parameters) {
+	RESET_CHUNKS_ON_CHANGE
+	falloff_parameters = parameters;
+}
+
+Vector2 ProceduralTerrain::get_falloff_parameters() const {
+	return falloff_parameters;
+}
+
 void ProceduralTerrain::reset_chunks() {
 	const Array chunks = generated_chunks.values();
 	for (int i = 0; i < chunks.size(); i++) {
@@ -287,14 +304,29 @@ void ProceduralTerrain::_update() {
 }
 
 Ref<Mesh> ProceduralTerrain::generate_chunk(const Ref<FastNoiseLite>& noise, const Ref<Curve>& height_curve, const int level_of_detail,
-	const Ref<StandardMaterial3D>& material, const int octaves, const real_t persistence, const real_t lacunarity, const real_t height_scale, Vector2 offset) {
+	const Ref<StandardMaterial3D>& material, const int octaves, const real_t persistence, const real_t lacunarity, const real_t height_scale,
+	Vector2 offset, Vector2 falloff_parameters) {
 
-	const Array matrix = _generate_matrix(octaves, noise, persistence, lacunarity, offset);
+	Array matrix = _generate_matrix(octaves, noise, persistence, lacunarity, offset);
 	const Ref<ArrayMesh> mesh = _generate_mesh(matrix, level_of_detail, height_curve, height_scale);
+
+	if (falloff_parameters != Vector2{}) {
+		Array map = _generate_falloff(falloff_parameters);
+		int index = 0;
+		for (int y = 0; y < matrix_size; y++) {
+			for (int x = 0; x < matrix_size; x++) {
+				const real_t falloff = map[index];
+				const real_t previous_value = matrix[index];
+				matrix[index] = previous_value - falloff;
+				index++;
+			}
+		}
+	}
 	
 	if (!material.is_null()) {
 		_generate_material(matrix, material);
 	}
+	
 	
 	return mesh;
 }
@@ -386,17 +418,20 @@ Ref<ArrayMesh> ProceduralTerrain::_generate_mesh(const Array& matrix, const int 
 	const int increment = CLAMP((max_level_of_detail - level_of_detail) * 2, 1, 12);
 	const int vertices_per_line = (matrix_size - 1) / increment + 1;
 
-	Array arrays = Array();
+	Array arrays{};
 	arrays.resize(Mesh::ARRAY_MAX);
 
-	PackedVector3Array vertices = PackedVector3Array();
+	PackedVector3Array vertices{};
 	vertices.resize(pow(vertices_per_line, 2));
 
-	PackedVector2Array uvs = PackedVector2Array();
-	uvs.resize(pow(vertices_per_line, 2));
+	PackedVector2Array uvs{};
+	uvs.resize(vertices.size());
 
-	PackedInt32Array indices = PackedInt32Array();
+	PackedInt32Array indices{};
 	indices.resize(pow(vertices_per_line - 1, 2) * 6);
+
+	PackedVector3Array normals{};
+	normals.resize(vertices.size());
 	
 	int vertex_index = 0;
 	int indices_index = 0;
@@ -420,10 +455,33 @@ Ref<ArrayMesh> ProceduralTerrain::_generate_mesh(const Array& matrix, const int 
 			vertex_index++;
 		}
 	}
+
+	const int number_of_triangles = indices.size() / 3;
+
+	for (int i = 0; i < number_of_triangles; i++) {
+		const int triangle_index = i * 3;
+		const int a_index = indices[triangle_index];
+		const int b_index = indices[triangle_index + 1];
+		const int c_index = indices[triangle_index + 2];
+		
+		Vector3 a = vertices[a_index];
+		Vector3 b = vertices[b_index];
+		Vector3 c = vertices[c_index];
+		Vector3 normal = Plane(a, b, c).normal;
+		
+		normals.set(a_index, normals[a_index] + normal);
+		normals.set(b_index, normals[b_index] + normal);
+		normals.set(c_index, normals[c_index] + normal);
+	}
+
+	for (int i = 0; i < normals.size(); i++) {
+		normals.set(i, normals[i].normalized());
+	}
 	
 	arrays[Mesh::ARRAY_INDEX] = indices;
 	arrays[Mesh::ARRAY_TEX_UV] = uvs;
 	arrays[Mesh::ARRAY_VERTEX] = vertices;
+	arrays[Mesh::ARRAY_NORMAL] = normals;
 
 	Ref<ArrayMesh> mesh = memnew(ArrayMesh);
 	mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
@@ -463,4 +521,26 @@ void ProceduralTerrain::_generate_material(const Array& matrix, const Ref<Standa
 	const Ref<Texture> texture = ImageTexture::create_from_image(image);
 	
 	material->set_texture(StandardMaterial3D::TextureParam::TEXTURE_ALBEDO, texture);
+}
+
+Array ProceduralTerrain::_generate_falloff(Vector2 falloff_parameters) {
+	Array map{};
+	map.resize(matrix_size * matrix_size);
+	int index = 0;
+	
+	for (int i = 0; i < matrix_size; i++) {
+		for (int j = 0; j < matrix_size; j++) {
+			const real_t x = static_cast<real_t>(i) / matrix_size * 2 - 1;
+			const real_t y = static_cast<real_t>(j) / matrix_size * 2 - 1;
+			const real_t value = MAX(ABS(x), ABS(y));
+
+			const real_t a = falloff_parameters.x;
+			const real_t b = falloff_parameters.y;
+			
+			map[index] = pow(value, a) / (pow(value, a) + pow(b - b * value, a));
+			index++;
+		}
+	}
+	
+	return map;
 }

@@ -40,6 +40,7 @@ class ProceduralTerrain : public Node3D {
     real_t view_distance;
     PackedFloat32Array view_thresholds;
     bool reset_chunks_on_change;
+    Vector2 falloff_parameters;
     
 public:
     void set_octaves(int p_octaves);
@@ -73,9 +74,13 @@ public:
     bool get_reset_chunks_on_change() const;
     
     void reset_chunks();
+
+    void set_falloff_parameters(Vector2 parameters);
+    Vector2 get_falloff_parameters() const;
     
     static Ref<Mesh> generate_chunk(const Ref<FastNoiseLite>& noise, const Ref<Curve>& height_curve, int level_of_detail,
-        const Ref<StandardMaterial3D>& material, int octaves, real_t persistence, real_t lacunarity, real_t height_scale, Vector2 offset);
+        const Ref<StandardMaterial3D>& material, int octaves, real_t persistence, real_t lacunarity, real_t height_scale,
+        Vector2 offset, Vector2 falloff_parameters);
     
     ProceduralTerrain();
 
@@ -90,6 +95,7 @@ private:
     static Array _generate_matrix(int octaves, const Ref<FastNoiseLite>& noise, real_t persistence, real_t lacunarity, Vector2 offset);
     static Ref<ArrayMesh> _generate_mesh(const Array& matrix, int level_of_detail, const Ref<Curve>& height_curve, real_t height_scale);
     static void ProceduralTerrain::_generate_material(const Array& matrix, const Ref<StandardMaterial3D>& material);
+    static Array _generate_falloff(Vector2 falloff_parameters);
 };
 
 #endif
