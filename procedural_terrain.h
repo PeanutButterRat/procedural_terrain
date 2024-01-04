@@ -13,17 +13,7 @@ class Curve;
 class Texture;
 class FastNoiseLite;
 struct Vector2;
-
-
-class Chunk : public MeshInstance3D {
-    Dictionary resource_threads;
-    Dictionary meshes;
-    Dictionary materials;
-    
-public:
-    void request_mesh(int level_of_detail);
-    ~Chunk() override;
-};
+class Chunk;
 
 class ProceduralTerrain : public Node3D {
     GDCLASS(ProceduralTerrain, Node3D);
