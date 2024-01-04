@@ -1,6 +1,7 @@
 ﻿#include "chunk.h"
 
 
+#include "procedural_terrain.h"
 #include "core/core_bind.h"
 
 
@@ -22,18 +23,18 @@ void Chunk::request_mesh(int level_of_detail) {
         thread.instantiate();
         resource_threads[level_of_detail] = thread;
 		
-        const Node* terrain = get_parent();
+        const ProceduralTerrain* terrain = cast_to<ProceduralTerrain>(get_parent());
         thread->start(Callable{terrain, "generate_chunk"}.bind(
-            terrain->get("noise").duplicate(),
-            terrain->get("height_curve").duplicate(),
+            terrain->get_noise()->duplicate(),
+            terrain->get_height_curve()->duplicate(),
             level_of_detail,
             material,
-            terrain->get("octaves"),
-            terrain->get("persistence"),
-            terrain->get("lacunarity"),
-            terrain->get("height_scale"),
+            terrain->get_octaves(),
+            terrain->get_persistence(),
+            terrain->get_lacunarity(),
+            terrain->get_height_scale(),
             Vector2{get_position().x, get_position().z},
-            terrain->get("falloff_parameters")
+            terrain->get_falloff()
         ));
     }
 	

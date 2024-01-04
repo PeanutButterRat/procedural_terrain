@@ -4,26 +4,20 @@
 #include "scene/resources/curve.h"
 #include "scene/resources/texture.h"
 #include "scene/resources/surface_tool.h"
-#include "scene/3d/mesh_instance_3d.h"
 #include "scene/resources/image_texture.h"
+#include "scene/3d/mesh_instance_3d.h"
 
 #include "core/math/random_number_generator.h"
 #include "core/math/math_funcs.h"
 #include "core/typedefs.h"
 #include "core/core_bind.h"
 
-#include "modules/noise/fastnoise_lite.h"
-
 #include "chunk.h"
-
-#define RESET_CHUNKS_ON_CHANGE if (reset_chunks_on_change) { reset_chunks(); }
 
 constexpr int matrix_size = 241;
 constexpr real_t half_matrix_size = matrix_size / 2.0f;
 constexpr real_t max_offset = 100'000.0f;
 constexpr real_t center_offset = (matrix_size - 1) / 2.0f;
-constexpr int min_octaves = 1;
-constexpr int max_octaves = 10;
 constexpr int min_level_of_detail = 0;
 constexpr int max_level_of_detail = 6;
 constexpr int chunk_size = matrix_size - 1;
@@ -57,14 +51,11 @@ void ProceduralTerrain::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_view_thresholds", "view_thresholds"), &ProceduralTerrain::set_view_thresholds);
 	ClassDB::bind_method(D_METHOD("get_view_thresholds"), &ProceduralTerrain::get_view_thresholds);
-
-	ClassDB::bind_method(D_METHOD("set_reset_chunks_on_change", "value"), &ProceduralTerrain::set_reset_chunks_on_change);
-	ClassDB::bind_method(D_METHOD("get_reset_chunks_on_change"), &ProceduralTerrain::get_reset_chunks_on_change);
-
-	ClassDB::bind_method(D_METHOD("set_falloff_parameters", "parameters"), &ProceduralTerrain::set_falloff_parameters);
-	ClassDB::bind_method(D_METHOD("get_falloff_parameters"), &ProceduralTerrain::get_falloff_parameters);
 	
-	ClassDB::bind_method(D_METHOD("reset_chunks"), &ProceduralTerrain::reset_chunks);
+	ClassDB::bind_method(D_METHOD("set_falloff", "falloff"), &ProceduralTerrain::set_falloff);
+	ClassDB::bind_method(D_METHOD("get_falloff"), &ProceduralTerrain::get_falloff);
+	
+	ClassDB::bind_method(D_METHOD("reset_chunks"), &ProceduralTerrain::clear_chunks);
 	
 	ClassDB::bind_static_method("ProceduralTerrain",
 		D_METHOD("generate_chunk", "noise", "height_curve", "level_of_detail", "material", "octaves", "persistence", "lacunarity", "height_scale", "offset", "falloff_parameters"),
@@ -75,7 +66,6 @@ void ProceduralTerrain::_bind_methods() {
 	BIND_CONSTANT(min_octaves);
 	BIND_CONSTANT(max_octaves);
 
-	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "reset_chunks_on_change"), "set_reset_chunks_on_change", "get_reset_chunks_on_change");
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "observer", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D"), "set_observer", "get_observer");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "view_distance"), "set_view_distance", "get_view_distance");
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_FLOAT32_ARRAY, "view_thresholds"), "set_view_thresholds", "get_view_thresholds");
@@ -85,84 +75,13 @@ void ProceduralTerrain::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "persistence"), "set_persistence", "get_persistence");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "height_scale"), "set_height_scale", "get_height_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "height_curve", PROPERTY_HINT_RESOURCE_TYPE, "Curve"), "set_height_curve", "get_height_curve");
-	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "falloff_parameters"), "set_falloff_parameters", "get_falloff_parameters");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "falloff"), "set_falloff", "get_falloff");
 }
 
 void ProceduralTerrain::_notification(const int p_what) {
 	if (p_what == NOTIFICATION_INTERNAL_PROCESS) {
 		_update();
 	}
-}
-
-void ProceduralTerrain::set_octaves(const int p_octaves) {
-	RESET_CHUNKS_ON_CHANGE
-	octaves = CLAMP(p_octaves, min_octaves, max_octaves);
-}
-
-int ProceduralTerrain::get_octaves() const {
-	return octaves;
-}
-
-void ProceduralTerrain::set_lacunarity(const real_t p_lacunarity) {
-	RESET_CHUNKS_ON_CHANGE
-	lacunarity = p_lacunarity;
-}
-
-real_t ProceduralTerrain::get_lacunarity() const {
-	return lacunarity;
-}
-
-void ProceduralTerrain::set_persistence(const real_t p_persistence) {
-	RESET_CHUNKS_ON_CHANGE
-	persistence = p_persistence;
-}
-
-real_t ProceduralTerrain::get_persistence() const {
-	return persistence;
-}
-
-void ProceduralTerrain::set_height_scale(const real_t p_height_scale) {
-	RESET_CHUNKS_ON_CHANGE
-	height_scale = p_height_scale;
-}
-
-real_t ProceduralTerrain::get_height_scale() const {
-	return height_scale;
-}
-
-void ProceduralTerrain::set_noise(const Ref<FastNoiseLite>& p_noise) {
-	RESET_CHUNKS_ON_CHANGE
-	noise = p_noise;
-}
-
-Ref<FastNoiseLite> ProceduralTerrain::get_noise() const {
-	return noise;
-}
-
-void ProceduralTerrain::set_height_curve(const Ref<Curve>& p_height_curve) {
-	RESET_CHUNKS_ON_CHANGE
-	height_curve = p_height_curve;
-}
-
-Ref<Curve> ProceduralTerrain::get_height_curve() const {
-	return height_curve;
-}
-
-void ProceduralTerrain::set_observer(const NodePath& p_observer) {
-	RESET_CHUNKS_ON_CHANGE
-	observer = p_observer;
-}
-
-NodePath ProceduralTerrain::get_observer() const {
-	return observer;
-}
-
-void ProceduralTerrain::set_view_distance(const real_t p_view_distance) {
-	view_distance = p_view_distance;
-}
-
-real_t ProceduralTerrain::get_view_distance() const {
-	return view_distance;
 }
 
 void ProceduralTerrain::set_view_thresholds(PackedFloat32Array p_view_thresholds) {
@@ -172,28 +91,7 @@ void ProceduralTerrain::set_view_thresholds(PackedFloat32Array p_view_thresholds
 	view_thresholds = p_view_thresholds;
 }
 
-PackedFloat32Array ProceduralTerrain::get_view_thresholds() const {
-	return view_thresholds;
-}
-
-void ProceduralTerrain::set_reset_chunks_on_change(bool p_reset_chunks_on_change) {
-	reset_chunks_on_change = p_reset_chunks_on_change;
-}
-
-bool ProceduralTerrain::get_reset_chunks_on_change() const {
-	return reset_chunks_on_change;
-}
-
-void ProceduralTerrain::set_falloff_parameters(Vector2 parameters) {
-	RESET_CHUNKS_ON_CHANGE
-	falloff_parameters = parameters;
-}
-
-Vector2 ProceduralTerrain::get_falloff_parameters() const {
-	return falloff_parameters;
-}
-
-void ProceduralTerrain::reset_chunks() {
+void ProceduralTerrain::clear_chunks() {
 	const Array chunks = generated_chunks.values();
 	for (int i = 0; i < chunks.size(); i++) {
 		Chunk* chunk = cast_to<Chunk>(chunks[i]);
@@ -257,19 +155,19 @@ void ProceduralTerrain::_update() {
 
 Ref<Mesh> ProceduralTerrain::generate_chunk(const Ref<FastNoiseLite>& noise, const Ref<Curve>& height_curve, const int level_of_detail,
 	const Ref<StandardMaterial3D>& material, const int octaves, const real_t persistence, const real_t lacunarity, const real_t height_scale,
-	Vector2 offset, Vector2 falloff_parameters) {
+	Vector2 offset, Vector2 falloff) {
 
 	Array matrix = _generate_matrix(octaves, noise, persistence, lacunarity, offset);
 	const Ref<ArrayMesh> mesh = _generate_mesh(matrix, level_of_detail, height_curve, height_scale);
 
-	if (falloff_parameters != Vector2{}) {
-		Array map = _generate_falloff(falloff_parameters);
+	if (falloff != Vector2{}) {
+		Array map = _generate_falloff(falloff);
 		int index = 0;
 		for (int y = 0; y < matrix_size; y++) {
 			for (int x = 0; x < matrix_size; x++) {
-				const real_t falloff = map[index];
+				const real_t falloff_amount = map[index];
 				const real_t previous_value = matrix[index];
-				matrix[index] = previous_value - falloff;
+				matrix[index] = previous_value - falloff_amount;
 				index++;
 			}
 		}
@@ -475,7 +373,7 @@ void ProceduralTerrain::_generate_material(const Array& matrix, const Ref<Standa
 	material->set_texture(StandardMaterial3D::TextureParam::TEXTURE_ALBEDO, texture);
 }
 
-Array ProceduralTerrain::_generate_falloff(Vector2 falloff_parameters) {
+Array ProceduralTerrain::_generate_falloff(const Vector2 falloff) {
 	Array map{};
 	map.resize(matrix_size * matrix_size);
 	int index = 0;
@@ -486,8 +384,8 @@ Array ProceduralTerrain::_generate_falloff(Vector2 falloff_parameters) {
 			const real_t y = static_cast<real_t>(j) / matrix_size * 2 - 1;
 			const real_t value = MAX(ABS(x), ABS(y));
 
-			const real_t a = falloff_parameters.x;
-			const real_t b = falloff_parameters.y;
+			const real_t a = falloff.x;
+			const real_t b = falloff.y;
 			
 			map[index] = pow(value, a) / (pow(value, a) + pow(b - b * value, a));
 			index++;
