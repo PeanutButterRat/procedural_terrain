@@ -126,7 +126,7 @@ Ref<Mesh> ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainParamet
 	}
 	
 	if (material.is_valid()) {
-		_generate_material(matrix, material);
+		_generate_material(matrix, parameters->get_color_map(), material);
 	}
 	
 	return mesh;
@@ -265,31 +265,12 @@ Ref<ArrayMesh> ProceduralTerrain::_generate_mesh(const Array& matrix, const int 
 	return mesh;
 }
 
-void ProceduralTerrain::_generate_material(const Array& matrix, const Ref<StandardMaterial3D>& material) {
+void ProceduralTerrain::_generate_material(const Array& matrix, const Ref<Gradient>& color_map, const Ref<StandardMaterial3D>& material) {
 	const Ref<Image> image = Image::create_empty(MATRIX_SIZE, MATRIX_SIZE, false, Image::FORMAT_RGB8);
 	for (int y = 0; y < MATRIX_SIZE; y++) {
 		for (int x = 0; x < MATRIX_SIZE; x++) {
 			const real_t height = matrix[y * MATRIX_SIZE + x];
-			Color color;
-			
-			if (height < 0.3f) {
-				color = Color(21.0f/255, 106.0f/255, 179.0f/255);
-			} else if (height < 0.4f) {
-				color = Color(72.0f/255, 151.0f/255, 219.0f/255);
-			} else if (height < 0.45f) {
-				color = Color(235.0f/255, 228.0f/255, 103.0f/255);
-			} else if (height < 0.55f) {
-				color = Color(46.0f/255, 148.0f/255, 51.0f/255);
-			} else if (height < 0.6f) {
-				color = Color(35.0f/255, 105.0f/255, 38.0f/255);
-			} else if (height < 0.7f) {
-				color = Color(51.0f/255, 41.0f/255, 37.0f/255);
-			} else if (height < 0.9f) {
-				color = Color(31.0f/255, 25.0f/255, 22.0f/255);
-			} else {
-				color = Color(1.0f, 1.0f, 1.0f);
-			}
-			
+			Color color = color_map->get_color_at_offset(height);
 			image->set_pixel(x, y, color);
 		}
 	}
