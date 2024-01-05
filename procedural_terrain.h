@@ -2,10 +2,8 @@
 #define PROCEDURAL_TERRAIN_H
 
 
-#include "scene/3d/mesh_instance_3d.h"
-
-#include "scene/resources/image_texture.h"
-
+#include "procedural_terrain_parameters.h"
+#include "scene/3d/node_3d.h"
 
 class MeshInstance3D;
 class Node3D;
@@ -13,74 +11,49 @@ class Curve;
 class Texture;
 class FastNoiseLite;
 struct Vector2;
+class ProceduralTerrainChunk;
+class ProceduralTerrainParameters;
 
-
-class Chunk : public MeshInstance3D {
-    Dictionary resource_threads;
-    Dictionary meshes;
-    Dictionary materials;
-    
-public:
-    void request_mesh(int level_of_detail);
-    ~Chunk() override;
-};
 
 class ProceduralTerrain : public Node3D {
     GDCLASS(ProceduralTerrain, Node3D);
     
-    int octaves;
-    real_t lacunarity;
-    real_t persistence;
-    Ref<FastNoiseLite> noise;
-    real_t height_scale;
-    Ref<Curve> height_curve;
-    NodePath observer;
+    NodePath viewer;
+    PackedInt32Array detail_offsets;
+    Ref<ProceduralTerrainParameters> terrain_parameters;
+    
     Array visible_chunks;
     Dictionary generated_chunks;
-    real_t view_distance;
-    PackedFloat32Array view_thresholds;
-    bool reset_chunks_on_change;
-    Vector2 falloff_parameters;
+
     
 public:
-    void set_octaves(int p_octaves);
-    int get_octaves() const;
-
-    void set_lacunarity(real_t p_lacunarity);
-    real_t get_lacunarity() const;
-
-    void set_persistence(real_t p_persistence);
-    real_t get_persistence() const;
-
-    void set_height_scale(real_t p_height_scale);
-    real_t get_height_scale() const;
-
-    void set_noise(const Ref<FastNoiseLite> &p_noise);
-    Ref<FastNoiseLite> get_noise() const;
-
-    void set_height_curve(const Ref<Curve> &p_height_curve);
-    Ref<Curve> get_height_curve() const;
-
-    void set_observer(const NodePath& p_observer);
-    NodePath get_observer() const;
-
-    void set_view_distance(real_t p_view_distance);
-    real_t get_view_distance() const;
-
-    void set_view_thresholds(PackedFloat32Array p_view_thresholds);
-    PackedFloat32Array get_view_thresholds() const;
-
-    void set_reset_chunks_on_change(bool p_reset_chunks_on_change);
-    bool get_reset_chunks_on_change() const;
+    void set_viewer(const NodePath& p_observer) { viewer = p_observer; clear_chunks(); }
+    NodePath get_viewer() const { return viewer; }
     
-    void reset_chunks();
+    void set_detail_offsets(PackedInt32Array p_detail_offsets) {
+        for (int i = 0; i < p_detail_offsets.size(); i++) {
+            p_detail_offsets.set(i, CLAMP(p_detail_offsets[i], MIN_LEVEL_OF_DETAIL, MAX_LEVEL_OF_DETAIL));
+        }
+        detail_offsets = p_detail_offsets;
+    }
+    PackedInt32Array get_detail_offsets() const { return detail_offsets; }
 
-    void set_falloff_parameters(Vector2 parameters);
-    Vector2 get_falloff_parameters() const;
+    void set_terrain_parameters(const  Ref<ProceduralTerrainParameters>& parameters) {
+        if (terrain_parameters.is_valid()) {
+            terrain_parameters->disconnect_changed(callable_mp(this, &ProceduralTerrain::clear_chunks));
+        }
+        
+        terrain_parameters = parameters;
+
+        if (terrain_parameters.is_valid()) {
+            terrain_parameters->connect_changed(callable_mp(this, &ProceduralTerrain::clear_chunks));
+        }
+    }
+    Ref<ProceduralTerrainParameters> get_terrain_parameters() const { return terrain_parameters; }
     
-    static Ref<Mesh> generate_chunk(const Ref<FastNoiseLite>& noise, const Ref<Curve>& height_curve, int level_of_detail,
-        const Ref<StandardMaterial3D>& material, int octaves, real_t persistence, real_t lacunarity, real_t height_scale,
-        Vector2 offset, Vector2 falloff_parameters);
+    void clear_chunks();
+    
+    static Ref<Mesh> generate_terrain(const Ref<ProceduralTerrainParameters>& parameters, const Ref<StandardMaterial3D>& material);
     
     ProceduralTerrain();
 
@@ -90,12 +63,11 @@ protected:
 
 private:
     void _update();
-    float _get_distance_to_chunk(const Chunk* chunk) const;
 
-    static Array _generate_matrix(int octaves, const Ref<FastNoiseLite>& noise, real_t persistence, real_t lacunarity, Vector2 offset);
+    static Array _generate_matrix(int octaves, const Ref<FastNoiseLite>& noise, real_t persistence, real_t lacunarity);
     static Ref<ArrayMesh> _generate_mesh(const Array& matrix, int level_of_detail, const Ref<Curve>& height_curve, real_t height_scale);
     static void ProceduralTerrain::_generate_material(const Array& matrix, const Ref<StandardMaterial3D>& material);
-    static Array _generate_falloff(Vector2 falloff_parameters);
+    static Array _generate_falloff(Vector2 falloff);
 };
 
 #endif
