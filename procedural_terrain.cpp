@@ -5,77 +5,45 @@
 #include "scene/resources/texture.h"
 #include "scene/resources/surface_tool.h"
 #include "scene/resources/image_texture.h"
-#include "scene/3d/mesh_instance_3d.h"
 
 #include "core/math/random_number_generator.h"
 #include "core/math/math_funcs.h"
 #include "core/typedefs.h"
 #include "core/core_bind.h"
 
-#include "chunk.h"
+#include "procedural_terrain_parameters.h"
+#include "procedural_terrain_chunk.h"
 
 constexpr int matrix_size = 241;
 constexpr real_t half_matrix_size = matrix_size / 2.0f;
 constexpr real_t max_offset = 100'000.0f;
 constexpr real_t center_offset = (matrix_size - 1) / 2.0f;
-constexpr int min_level_of_detail = 0;
-constexpr int max_level_of_detail = 6;
 constexpr int chunk_size = matrix_size - 1;
 constexpr real_t normalization_factor = 0.9f;
 
 
 void ProceduralTerrain::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("set_octaves", "octaves"), &ProceduralTerrain::set_octaves);
-	ClassDB::bind_method(D_METHOD("get_octaves"), &ProceduralTerrain::get_octaves);
-
-	ClassDB::bind_method(D_METHOD("set_lacunarity", "lacunarity"), &ProceduralTerrain::set_lacunarity);
-	ClassDB::bind_method(D_METHOD("get_lacunarity"), &ProceduralTerrain::get_lacunarity);
-
-	ClassDB::bind_method(D_METHOD("set_persistence", "persistence"), &ProceduralTerrain::set_persistence);
-	ClassDB::bind_method(D_METHOD("get_persistence"), &ProceduralTerrain::get_persistence);
+	ClassDB::bind_method(D_METHOD("set_viewer", "observer"), &ProceduralTerrain::set_viewer);
+	ClassDB::bind_method(D_METHOD("get_viewer"), &ProceduralTerrain::get_viewer);
 	
-	ClassDB::bind_method(D_METHOD("set_height_scale", "scale"), &ProceduralTerrain::set_height_scale);
-	ClassDB::bind_method(D_METHOD("get_height_scale"), &ProceduralTerrain::get_height_scale);
-
-	ClassDB::bind_method(D_METHOD("set_noise", "noise"), &ProceduralTerrain::set_noise);
-	ClassDB::bind_method(D_METHOD("get_noise"), &ProceduralTerrain::get_noise);
-
-	ClassDB::bind_method(D_METHOD("set_height_curve", "curve"), &ProceduralTerrain::set_height_curve);
-	ClassDB::bind_method(D_METHOD("get_height_curve"), &ProceduralTerrain::get_height_curve);
-
-	ClassDB::bind_method(D_METHOD("set_observer", "observer"), &ProceduralTerrain::set_observer);
-	ClassDB::bind_method(D_METHOD("get_observer"), &ProceduralTerrain::get_observer);
-
-	ClassDB::bind_method(D_METHOD("set_view_distance", "view_distance"), &ProceduralTerrain::set_view_distance);
-	ClassDB::bind_method(D_METHOD("get_view_distance"), &ProceduralTerrain::get_view_distance);
-
 	ClassDB::bind_method(D_METHOD("set_view_thresholds", "view_thresholds"), &ProceduralTerrain::set_view_thresholds);
 	ClassDB::bind_method(D_METHOD("get_view_thresholds"), &ProceduralTerrain::get_view_thresholds);
 	
-	ClassDB::bind_method(D_METHOD("set_falloff", "falloff"), &ProceduralTerrain::set_falloff);
-	ClassDB::bind_method(D_METHOD("get_falloff"), &ProceduralTerrain::get_falloff);
+	ClassDB::bind_method(D_METHOD("set_terrain_parameters", "parameters"), &ProceduralTerrain::set_terrain_parameters);
+	ClassDB::bind_method(D_METHOD("get_terrain_parameters"), &ProceduralTerrain::get_terrain_parameters);
 	
-	ClassDB::bind_method(D_METHOD("reset_chunks"), &ProceduralTerrain::clear_chunks);
+	ClassDB::bind_method(D_METHOD("clear_chunks"), &ProceduralTerrain::clear_chunks);
+	ClassDB::bind_static_method("ProceduralTerrain", D_METHOD("generate_terrain", "parameters", "material"), &generate_terrain, DEFVAL(Ref<StandardMaterial3D>{}));
 	
-	ClassDB::bind_static_method("ProceduralTerrain",
-		D_METHOD("generate_chunk", "noise", "height_curve", "level_of_detail", "material", "octaves", "persistence", "lacunarity", "height_scale", "offset", "falloff_parameters"),
-		&generate_chunk, DEFVAL(Ref<StandardMaterial3D>{}), DEFVAL(min_octaves), DEFVAL(1.0f), DEFVAL(1.0f), DEFVAL(1.0f), DEFVAL(Vector2{}), DEFVAL(Vector2{}));
-	
-	BIND_CONSTANT(min_level_of_detail);
-	BIND_CONSTANT(max_level_of_detail);
-	BIND_CONSTANT(min_octaves);
-	BIND_CONSTANT(max_octaves);
-
-	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "observer", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D"), "set_observer", "get_observer");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "view_distance"), "set_view_distance", "get_view_distance");
+	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "viewer", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D"), "set_viewer", "get_viewer");
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_FLOAT32_ARRAY, "view_thresholds"), "set_view_thresholds", "get_view_thresholds");
-	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "noise", PROPERTY_HINT_RESOURCE_TYPE, "FastNoiseLite"), "set_noise", "get_noise");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "octaves", PROPERTY_HINT_RANGE, itos(min_octaves) + "," + itos(max_octaves) + ",1"), "set_octaves", "get_octaves");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "lacunarity"), "set_lacunarity", "get_lacunarity");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "persistence"), "set_persistence", "get_persistence");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "height_scale"), "set_height_scale", "get_height_scale");
-	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "height_curve", PROPERTY_HINT_RESOURCE_TYPE, "Curve"), "set_height_curve", "get_height_curve");
-	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "falloff"), "set_falloff", "get_falloff");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "parameters", PROPERTY_HINT_RESOURCE_TYPE, "ProceduralTerrainParameters"), "set_terrain_parameters", "get_terrain_parameters");
+}
+
+ProceduralTerrain::ProceduralTerrain() {
+	const PackedFloat32Array thresholds = {100, 150, 200, 250, 300, 350, 400};
+	set_view_thresholds(thresholds);
+	set_process_internal(true);
 }
 
 void ProceduralTerrain::_notification(const int p_what) {
@@ -94,7 +62,7 @@ void ProceduralTerrain::set_view_thresholds(PackedFloat32Array p_view_thresholds
 void ProceduralTerrain::clear_chunks() {
 	const Array chunks = generated_chunks.values();
 	for (int i = 0; i < chunks.size(); i++) {
-		Chunk* chunk = cast_to<Chunk>(chunks[i]);
+		ProceduralTerrainChunk* chunk = cast_to<ProceduralTerrainChunk>(chunks[i]);
 		chunk->queue_free();
 	}
 	generated_chunks.clear();
@@ -103,13 +71,13 @@ void ProceduralTerrain::clear_chunks() {
 
 void ProceduralTerrain::_update() {
 	for (int i = 0; i < visible_chunks.size(); i++) {
-		Chunk* chunk = cast_to<Chunk>(visible_chunks[i]);
+		ProceduralTerrainChunk* chunk = cast_to<ProceduralTerrainChunk>(visible_chunks[i]);
 		chunk->set_visible(false);
 	}
 	visible_chunks.clear();
 	
-	const Node3D* observer_node = has_node(observer) ? cast_to<Node3D>(get_node(observer)) : nullptr;
-	
+	const Node3D* observer_node = has_node(viewer) ? cast_to<Node3D>(get_node(viewer)) : nullptr;
+	const real_t view_distance = view_thresholds[0];
 	if (observer_node != nullptr) {
 		const Vector2 relative_observer_position {
 			(observer_node->get_global_position() - get_global_position()).x,
@@ -124,7 +92,7 @@ void ProceduralTerrain::_update() {
 			for (int x_offset = -chunks_in_view_distance_x; x_offset <= chunks_in_view_distance_x; x_offset++) {
 				const Vector2 chunk_coordinates = Vector2(x + x_offset, y + y_offset);
 				if (!generated_chunks.has(chunk_coordinates)) {
-					Chunk* chunk = memnew(Chunk);
+					ProceduralTerrainChunk* chunk = memnew(ProceduralTerrainChunk);
 					generated_chunks[chunk_coordinates] = chunk;
 					chunk->set_name("__Chunk " + chunk_coordinates);
 					add_child(chunk, false, INTERNAL_MODE_BACK);
@@ -133,19 +101,17 @@ void ProceduralTerrain::_update() {
 					chunk->set_position(Vector3(chunk_position.x, 0, chunk_position.y));
 				}
 				
-				Chunk* chunk = cast_to<Chunk>(generated_chunks[chunk_coordinates]);
+				ProceduralTerrainChunk* chunk = cast_to<ProceduralTerrainChunk>(generated_chunks[chunk_coordinates]);
 				const float distance_to_chunk = _get_distance_to_chunk(chunk);
-				chunk->set_visible(distance_to_chunk <= view_distance);
 
-				if (chunk->is_visible()) {
-					int level_of_detail = 0;
-					while (level_of_detail < view_thresholds.size() - 1 && distance_to_chunk <= view_thresholds[level_of_detail + 1]) {
-						level_of_detail++;
-					}
+				int level_of_detail = -1;
+				while (level_of_detail < view_thresholds.size() - 1 && distance_to_chunk <= view_thresholds[level_of_detail + 1]) {
+					level_of_detail++;
+				}
 
-					if (!noise.is_null() && !height_curve.is_null()) {
-						chunk->request_mesh(level_of_detail);
-					}
+				if (level_of_detail >= 0) {
+					chunk->request_mesh(level_of_detail);
+					chunk->set_visible(true);
 					visible_chunks.append(chunk);
 				}
 			}
@@ -153,15 +119,12 @@ void ProceduralTerrain::_update() {
 	}
 }
 
-Ref<Mesh> ProceduralTerrain::generate_chunk(const Ref<FastNoiseLite>& noise, const Ref<Curve>& height_curve, const int level_of_detail,
-	const Ref<StandardMaterial3D>& material, const int octaves, const real_t persistence, const real_t lacunarity, const real_t height_scale,
-	Vector2 offset, Vector2 falloff) {
-
-	Array matrix = _generate_matrix(octaves, noise, persistence, lacunarity, offset);
-	const Ref<ArrayMesh> mesh = _generate_mesh(matrix, level_of_detail, height_curve, height_scale);
-
-	if (falloff != Vector2{}) {
-		Array map = _generate_falloff(falloff);
+Ref<Mesh> ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainParameters>& parameters, const Ref<StandardMaterial3D>& material) {
+	Array matrix = _generate_matrix(parameters->get_octaves(), parameters->get_noise(), parameters->get_persistence(), parameters->get_lacunarity());
+	const Ref<ArrayMesh> mesh = _generate_mesh(matrix, parameters->get_level_of_detail(), parameters->get_height_curve(), parameters->get_height_scale());
+	
+	if (parameters->get_falloff() != Vector2{}) {
+		Array map = _generate_falloff(parameters->get_falloff());
 		int index = 0;
 		for (int y = 0; y < matrix_size; y++) {
 			for (int x = 0; x < matrix_size; x++) {
@@ -173,20 +136,19 @@ Ref<Mesh> ProceduralTerrain::generate_chunk(const Ref<FastNoiseLite>& noise, con
 		}
 	}
 	
-	if (!material.is_null()) {
+	if (material.is_valid()) {
 		_generate_material(matrix, material);
 	}
-	
 	
 	return mesh;
 }
 
-float ProceduralTerrain::_get_distance_to_chunk(const Chunk* chunk) const {
+float ProceduralTerrain::_get_distance_to_chunk(const ProceduralTerrainChunk* chunk) const {
 	const Vector3 start = chunk->get_global_position();
 	Vector3 end = chunk->get_global_position();
 	end.x += chunk->get_aabb().size.x * get_scale().x;
 	end.z += chunk->get_aabb().size.z * get_scale().z;
-	const Vector3 point_of_reference = dynamic_cast<Node3D*>(get_node(observer))->get_global_position();
+	const Vector3 point_of_reference = dynamic_cast<Node3D*>(get_node(viewer))->get_global_position();
 	real_t dx = MAX(start.x - point_of_reference.x, point_of_reference.x - end.x);
 	real_t dy = MAX(start.z - point_of_reference.z, point_of_reference.z - end.z);
 	dx = MAX(dx, 0);
@@ -195,19 +157,7 @@ float ProceduralTerrain::_get_distance_to_chunk(const Chunk* chunk) const {
 	return sqrt(dx * dx + dy * dy);
 }
 
-ProceduralTerrain::ProceduralTerrain() {
-	octaves = 1;
-	lacunarity = 1.0f;
-	persistence = 1.0f;
-	height_scale = 1.0f;
-	view_distance = 300.0f;
-	reset_chunks_on_change = true;
-	const PackedFloat32Array thresholds = {100, 150, 200, 250, 300, 350, 400};
-	set_view_thresholds(thresholds);
-	set_process_internal(true);
-}
-
-Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoiseLite>& noise, const real_t persistence, const real_t lacunarity, Vector2 offset) {
+Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoiseLite>& noise, const real_t persistence, const real_t lacunarity) {
 	Array matrix{};
 	matrix.resize(matrix_size * matrix_size);
 	Array offsets{};
@@ -219,8 +169,8 @@ Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoise
 	real_t max_possible_amplitude = 1.0f;
 	
 	for (int i = 0; i < octaves; i++) {
-		const real_t x = rng.randf_range(-max_offset, max_offset) + offset.x;
-		const real_t y = rng.randf_range(-max_offset, max_offset) + offset.y;
+		const real_t x = rng.randf_range(-max_offset, max_offset);
+		const real_t y = rng.randf_range(-max_offset, max_offset);
 		offsets[i] = Vector2(x, y);
 
 		max_possible_height += max_possible_amplitude;
@@ -237,9 +187,10 @@ Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoise
 			
 			for (int octave = 0; octave < octaves; octave++) {
 				const Vector2 offset = offsets[octave];
-				const real_t sample_x = (x - half_matrix_size + offset.x) * frequency;
+				const real_t sample_x = (-x - half_matrix_size + offset.x) * frequency;
 				const real_t sample_y = (y - half_matrix_size + offset.y) * frequency;
-				const real_t sample = noise->get_noise_2d(sample_x, sample_y);
+				const real_t sample = noise->get_noise_3d(sample_y, sample_x, 0.0f);
+				
 				final_value += sample * amplitude;
 				amplitude *= persistence;
 				frequency *= lacunarity;
