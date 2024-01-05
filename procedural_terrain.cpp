@@ -26,8 +26,8 @@ void ProceduralTerrain::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_viewer", "observer"), &ProceduralTerrain::set_viewer);
 	ClassDB::bind_method(D_METHOD("get_viewer"), &ProceduralTerrain::get_viewer);
 	
-	ClassDB::bind_method(D_METHOD("set_view_thresholds", "view_thresholds"), &ProceduralTerrain::set_view_thresholds);
-	ClassDB::bind_method(D_METHOD("get_view_thresholds"), &ProceduralTerrain::get_view_thresholds);
+	ClassDB::bind_method(D_METHOD("set_detail_offsets", "detail_offsets"), &ProceduralTerrain::set_detail_offsets);
+	ClassDB::bind_method(D_METHOD("get_detail_offsets"), &ProceduralTerrain::get_detail_offsets);
 	
 	ClassDB::bind_method(D_METHOD("set_terrain_parameters", "parameters"), &ProceduralTerrain::set_terrain_parameters);
 	ClassDB::bind_method(D_METHOD("get_terrain_parameters"), &ProceduralTerrain::get_terrain_parameters);
@@ -36,13 +36,11 @@ void ProceduralTerrain::_bind_methods() {
 	ClassDB::bind_static_method("ProceduralTerrain", D_METHOD("generate_terrain", "parameters", "material"), &generate_terrain, DEFVAL(Ref<StandardMaterial3D>{}));
 	
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "viewer", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D"), "set_viewer", "get_viewer");
-	ADD_PROPERTY(PropertyInfo(Variant::PACKED_FLOAT32_ARRAY, "view_thresholds"), "set_view_thresholds", "get_view_thresholds");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_FLOAT32_ARRAY, "detail_offsets"), "set_detail_offsets", "get_detail_offsets");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "parameters", PROPERTY_HINT_RESOURCE_TYPE, "ProceduralTerrainParameters"), "set_terrain_parameters", "get_terrain_parameters");
 }
 
 ProceduralTerrain::ProceduralTerrain() {
-	const PackedFloat32Array thresholds = {100, 150, 200, 250, 300, 350, 400};
-	set_view_thresholds(thresholds);
 	set_process_internal(true);
 }
 
@@ -52,19 +50,14 @@ void ProceduralTerrain::_notification(const int p_what) {
 	}
 }
 
-void ProceduralTerrain::set_view_thresholds(PackedFloat32Array p_view_thresholds) {
-	p_view_thresholds.resize(MAX_LEVEL_OF_DETAIL + 1);
-	p_view_thresholds.sort();
-	p_view_thresholds.reverse();
-	view_thresholds = p_view_thresholds;
-}
-
 void ProceduralTerrain::clear_chunks() {
 	const Array chunks = generated_chunks.values();
+	
 	for (int i = 0; i < chunks.size(); i++) {
 		ProceduralTerrainChunk* chunk = cast_to<ProceduralTerrainChunk>(chunks[i]);
 		chunk->queue_free();
 	}
+	
 	generated_chunks.clear();
 	visible_chunks.clear();
 }
@@ -74,43 +67,39 @@ void ProceduralTerrain::_update() {
 		ProceduralTerrainChunk* chunk = cast_to<ProceduralTerrainChunk>(visible_chunks[i]);
 		chunk->set_visible(false);
 	}
+	
 	visible_chunks.clear();
 	
-	const Node3D* observer_node = has_node(viewer) ? cast_to<Node3D>(get_node(viewer)) : nullptr;
-	const real_t view_distance = view_thresholds[0];
-	if (observer_node != nullptr) {
+	if (const Node3D* observer = cast_to<Node3D>(get_node_or_null(viewer))) {
 		const Vector2 relative_observer_position {
-			(observer_node->get_global_position() - get_global_position()).x,
-			(observer_node->get_global_position() - get_global_position()).z
+			(observer->get_global_position() - get_global_position()).x,
+			(observer->get_global_position() - get_global_position()).z
 		};
+		
 		const real_t x = round(relative_observer_position.x / (CHUNK_SIZE * get_scale().x));
 		const real_t y = round(relative_observer_position.y / (CHUNK_SIZE * get_scale().z));
-		const int chunks_in_view_distance_x = round(view_distance / (CHUNK_SIZE * get_scale().x));
-		const int chunks_in_view_distance_y = round(view_distance / (CHUNK_SIZE * get_scale().z));
-		
-		for (int y_offset = -chunks_in_view_distance_y; y_offset <= chunks_in_view_distance_y; y_offset++) {
-			for (int x_offset = -chunks_in_view_distance_x; x_offset <= chunks_in_view_distance_x; x_offset++) {
-				const Vector2 chunk_coordinates = Vector2(x + x_offset, y + y_offset);
-				if (!generated_chunks.has(chunk_coordinates)) {
-					ProceduralTerrainChunk* chunk = memnew(ProceduralTerrainChunk);
-					generated_chunks[chunk_coordinates] = chunk;
-					chunk->set_name("__Chunk " + chunk_coordinates);
-					add_child(chunk, false, INTERNAL_MODE_BACK);
+
+		for (int ring = 0; ring < detail_offsets.size(); ring++) {
+			for (int y_offset = -ring; y_offset <= ring; y_offset++) {
+				for (int x_offset = -ring; x_offset <= ring; x_offset++) {
+					if (ABS(y_offset) != ring && ABS(x_offset) != ring) {
+						continue;
+					}
+					const Vector2 chunk_coordinates{x + x_offset, y + y_offset};
 					
-					const Vector2 chunk_position = chunk_coordinates * CHUNK_SIZE;
-					chunk->set_position(Vector3(chunk_position.x, 0, chunk_position.y));
-				}
+					if (!generated_chunks.has(chunk_coordinates)) {
+						ProceduralTerrainChunk* chunk = memnew(ProceduralTerrainChunk);
+						generated_chunks[chunk_coordinates] = chunk;
+						chunk->set_name("__Chunk " + chunk_coordinates);
+						add_child(chunk, false, INTERNAL_MODE_BACK);
+						
+						const Vector2 chunk_position = chunk_coordinates * CHUNK_SIZE;
+						chunk->set_position(Vector3(chunk_position.x, 0, chunk_position.y));
+					}
 				
-				ProceduralTerrainChunk* chunk = cast_to<ProceduralTerrainChunk>(generated_chunks[chunk_coordinates]);
-				const float distance_to_chunk = _get_distance_to_chunk(chunk);
-
-				int level_of_detail = -1;
-				while (level_of_detail < view_thresholds.size() - 1 && distance_to_chunk <= view_thresholds[level_of_detail + 1]) {
-					level_of_detail++;
-				}
-
-				if (level_of_detail >= 0) {
-					chunk->request_mesh(level_of_detail);
+					ProceduralTerrainChunk* chunk = cast_to<ProceduralTerrainChunk>(generated_chunks[chunk_coordinates]);
+					
+					chunk->request_mesh(detail_offsets[ring]);
 					chunk->set_visible(true);
 					visible_chunks.append(chunk);
 				}
@@ -141,20 +130,6 @@ Ref<Mesh> ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainParamet
 	}
 	
 	return mesh;
-}
-
-float ProceduralTerrain::_get_distance_to_chunk(const ProceduralTerrainChunk* chunk) const {
-	const Vector3 start = chunk->get_global_position();
-	Vector3 end = chunk->get_global_position();
-	end.x += chunk->get_aabb().size.x * get_scale().x;
-	end.z += chunk->get_aabb().size.z * get_scale().z;
-	const Vector3 point_of_reference = dynamic_cast<Node3D*>(get_node(viewer))->get_global_position();
-	real_t dx = MAX(start.x - point_of_reference.x, point_of_reference.x - end.x);
-	real_t dy = MAX(start.z - point_of_reference.z, point_of_reference.z - end.z);
-	dx = MAX(dx, 0);
-	dy = MAX(dy, 0);
-	
-	return sqrt(dx * dx + dy * dy);
 }
 
 Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoiseLite>& noise, const real_t persistence, const real_t lacunarity) {

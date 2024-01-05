@@ -19,7 +19,7 @@ class ProceduralTerrain : public Node3D {
     GDCLASS(ProceduralTerrain, Node3D);
     
     NodePath viewer;
-    PackedFloat32Array view_thresholds;
+    PackedInt32Array detail_offsets;
     Ref<ProceduralTerrainParameters> terrain_parameters;
     
     Array visible_chunks;
@@ -30,8 +30,13 @@ public:
     void set_viewer(const NodePath& p_observer) { viewer = p_observer; clear_chunks(); }
     NodePath get_viewer() const { return viewer; }
     
-    void set_view_thresholds(PackedFloat32Array p_view_thresholds);
-    PackedFloat32Array get_view_thresholds() const { return view_thresholds; }
+    void set_detail_offsets(PackedInt32Array p_detail_offsets) {
+        for (int i = 0; i < p_detail_offsets.size(); i++) {
+            p_detail_offsets.set(i, CLAMP(p_detail_offsets[i], MIN_LEVEL_OF_DETAIL, MAX_LEVEL_OF_DETAIL));
+        }
+        detail_offsets = p_detail_offsets;
+    }
+    PackedInt32Array get_detail_offsets() const { return detail_offsets; }
 
     void set_terrain_parameters(const  Ref<ProceduralTerrainParameters>& parameters) {
         if (terrain_parameters.is_valid()) {
@@ -58,7 +63,6 @@ protected:
 
 private:
     void _update();
-    float _get_distance_to_chunk(const ProceduralTerrainChunk* chunk) const;
 
     static Array _generate_matrix(int octaves, const Ref<FastNoiseLite>& noise, real_t persistence, real_t lacunarity);
     static Ref<ArrayMesh> _generate_mesh(const Array& matrix, int level_of_detail, const Ref<Curve>& height_curve, real_t height_scale);

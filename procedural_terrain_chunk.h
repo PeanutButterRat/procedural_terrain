@@ -24,7 +24,7 @@ public:
         }
     }
     
-    void request_mesh(int level_of_detail) {
+    void request_mesh(const int level_of_detail) {
         if (threads.has(level_of_detail)) {
             const Ref<core_bind::Thread> thread = threads[level_of_detail];
             if (!thread->is_alive()) {
@@ -46,7 +46,8 @@ public:
             const Ref<ProceduralTerrainParameters> parameters = terrain->get_terrain_parameters()->duplicate(true);
             const Ref<FastNoiseLite> noise = parameters->get_noise();
             noise->set_offset(noise->get_offset() + Vector3{get_position().z, -get_position().x, 0.0f});
-        
+            parameters->set_level_of_detail(level_of_detail);
+            
             thread->start(Callable{terrain, "generate_terrain"}.bind(parameters, material));
         }
 	
