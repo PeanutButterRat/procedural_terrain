@@ -14,12 +14,12 @@
 #include "procedural_terrain_parameters.h"
 #include "procedural_terrain_chunk.h"
 
-constexpr int matrix_size = 241;
-constexpr real_t half_matrix_size = matrix_size / 2.0f;
-constexpr real_t max_offset = 100'000.0f;
-constexpr real_t center_offset = (matrix_size - 1) / 2.0f;
-constexpr int chunk_size = matrix_size - 1;
-constexpr real_t normalization_factor = 0.9f;
+constexpr int MATRIX_SIZE = 241;
+constexpr int CHUNK_SIZE = MATRIX_SIZE - 1;
+constexpr real_t HALF_MATRIX_SIZE = MATRIX_SIZE / 2.0f;
+constexpr real_t MAX_OFFSET = 100'000.0f;
+constexpr real_t CENTER_OFFSET = (MATRIX_SIZE - 1) / 2.0f;
+constexpr real_t NORMALIZATION_FACTOR = 0.9f;
 
 
 void ProceduralTerrain::_bind_methods() {
@@ -53,7 +53,7 @@ void ProceduralTerrain::_notification(const int p_what) {
 }
 
 void ProceduralTerrain::set_view_thresholds(PackedFloat32Array p_view_thresholds) {
-	p_view_thresholds.resize(max_level_of_detail + 1);
+	p_view_thresholds.resize(MAX_LEVEL_OF_DETAIL + 1);
 	p_view_thresholds.sort();
 	p_view_thresholds.reverse();
 	view_thresholds = p_view_thresholds;
@@ -83,10 +83,10 @@ void ProceduralTerrain::_update() {
 			(observer_node->get_global_position() - get_global_position()).x,
 			(observer_node->get_global_position() - get_global_position()).z
 		};
-		const real_t x = round(relative_observer_position.x / (chunk_size * get_scale().x));
-		const real_t y = round(relative_observer_position.y / (chunk_size * get_scale().z));
-		const int chunks_in_view_distance_x = round(view_distance / (chunk_size * get_scale().x));
-		const int chunks_in_view_distance_y = round(view_distance / (chunk_size * get_scale().z));
+		const real_t x = round(relative_observer_position.x / (CHUNK_SIZE * get_scale().x));
+		const real_t y = round(relative_observer_position.y / (CHUNK_SIZE * get_scale().z));
+		const int chunks_in_view_distance_x = round(view_distance / (CHUNK_SIZE * get_scale().x));
+		const int chunks_in_view_distance_y = round(view_distance / (CHUNK_SIZE * get_scale().z));
 		
 		for (int y_offset = -chunks_in_view_distance_y; y_offset <= chunks_in_view_distance_y; y_offset++) {
 			for (int x_offset = -chunks_in_view_distance_x; x_offset <= chunks_in_view_distance_x; x_offset++) {
@@ -97,7 +97,7 @@ void ProceduralTerrain::_update() {
 					chunk->set_name("__Chunk " + chunk_coordinates);
 					add_child(chunk, false, INTERNAL_MODE_BACK);
 					
-					const Vector2 chunk_position = chunk_coordinates * chunk_size;
+					const Vector2 chunk_position = chunk_coordinates * CHUNK_SIZE;
 					chunk->set_position(Vector3(chunk_position.x, 0, chunk_position.y));
 				}
 				
@@ -126,8 +126,8 @@ Ref<Mesh> ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainParamet
 	if (parameters->get_falloff() != Vector2{}) {
 		Array map = _generate_falloff(parameters->get_falloff());
 		int index = 0;
-		for (int y = 0; y < matrix_size; y++) {
-			for (int x = 0; x < matrix_size; x++) {
+		for (int y = 0; y < MATRIX_SIZE; y++) {
+			for (int x = 0; x < MATRIX_SIZE; x++) {
 				const real_t falloff_amount = map[index];
 				const real_t previous_value = matrix[index];
 				matrix[index] = previous_value - falloff_amount;
@@ -159,7 +159,7 @@ float ProceduralTerrain::_get_distance_to_chunk(const ProceduralTerrainChunk* ch
 
 Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoiseLite>& noise, const real_t persistence, const real_t lacunarity) {
 	Array matrix{};
-	matrix.resize(matrix_size * matrix_size);
+	matrix.resize(MATRIX_SIZE * MATRIX_SIZE);
 	Array offsets{};
 	offsets.resize(octaves);
 	RandomNumberGenerator rng{};
@@ -169,8 +169,8 @@ Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoise
 	real_t max_possible_amplitude = 1.0f;
 	
 	for (int i = 0; i < octaves; i++) {
-		const real_t x = rng.randf_range(-max_offset, max_offset);
-		const real_t y = rng.randf_range(-max_offset, max_offset);
+		const real_t x = rng.randf_range(-MAX_OFFSET, MAX_OFFSET);
+		const real_t y = rng.randf_range(-MAX_OFFSET, MAX_OFFSET);
 		offsets[i] = Vector2(x, y);
 
 		max_possible_height += max_possible_amplitude;
@@ -179,16 +179,16 @@ Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoise
 	
 	int index = 0;
 
-	for (int y = 0; y < matrix_size; y++) {
-		for (int x = 0; x < matrix_size; x++) {
+	for (int y = 0; y < MATRIX_SIZE; y++) {
+		for (int x = 0; x < MATRIX_SIZE; x++) {
 			real_t amplitude = 1.0f;
 			real_t frequency = 1.0f;
 			real_t final_value = 0.0f;
 			
 			for (int octave = 0; octave < octaves; octave++) {
 				const Vector2 offset = offsets[octave];
-				const real_t sample_x = (-x - half_matrix_size + offset.x) * frequency;
-				const real_t sample_y = (y - half_matrix_size + offset.y) * frequency;
+				const real_t sample_x = (-x - HALF_MATRIX_SIZE + offset.x) * frequency;
+				const real_t sample_y = (y - HALF_MATRIX_SIZE + offset.y) * frequency;
 				const real_t sample = noise->get_noise_3d(sample_y, sample_x, 0.0f);
 				
 				final_value += sample * amplitude;
@@ -196,16 +196,16 @@ Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoise
 				frequency *= lacunarity;
 			}
 
-			matrix[y * matrix_size + x] = final_value;
+			matrix[y * MATRIX_SIZE + x] = final_value;
 			index++;
 		}
 	}
 	
 	index = 0;
 
-	for (int y = 0; y < matrix_size; y++) {
-		for (int x = 0; x < matrix_size; x++) {
-			const real_t bounds = max_possible_height * normalization_factor;
+	for (int y = 0; y < MATRIX_SIZE; y++) {
+		for (int x = 0; x < MATRIX_SIZE; x++) {
+			const real_t bounds = max_possible_height * NORMALIZATION_FACTOR;
 			const real_t normalized_height = Math::inverse_lerp(-bounds, bounds, matrix[index]);
 			matrix[index] = normalized_height;
 			index++;
@@ -216,8 +216,8 @@ Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoise
 }
 
 Ref<ArrayMesh> ProceduralTerrain::_generate_mesh(const Array& matrix, const int level_of_detail, const Ref<Curve>& height_curve, const real_t height_scale) {
-	const int increment = CLAMP((max_level_of_detail - level_of_detail) * 2, 1, 12);
-	const int vertices_per_line = (matrix_size - 1) / increment + 1;
+	const int increment = CLAMP((MAX_LEVEL_OF_DETAIL - level_of_detail) * 2, 1, 12);
+	const int vertices_per_line = (MATRIX_SIZE - 1) / increment + 1;
 
 	Array arrays{};
 	arrays.resize(Mesh::ARRAY_MAX);
@@ -237,13 +237,13 @@ Ref<ArrayMesh> ProceduralTerrain::_generate_mesh(const Array& matrix, const int 
 	int vertex_index = 0;
 	int indices_index = 0;
 	
-	for (int y = 0; y < matrix_size; y += increment) {
-		for (int x = 0; x < matrix_size; x += increment) {
-			const real_t height = height_curve->sample(matrix[y * matrix_size + x]) * height_scale;
-			vertices.set(vertex_index, Vector3(x - center_offset, height, y - center_offset));
-			uvs.set(vertex_index, Vector2(static_cast<real_t>(x) / matrix_size, static_cast<real_t>(y) / matrix_size));
+	for (int y = 0; y < MATRIX_SIZE; y += increment) {
+		for (int x = 0; x < MATRIX_SIZE; x += increment) {
+			const real_t height = height_curve->sample(matrix[y * MATRIX_SIZE + x]) * height_scale;
+			vertices.set(vertex_index, Vector3(x - CENTER_OFFSET, height, y - CENTER_OFFSET));
+			uvs.set(vertex_index, Vector2(static_cast<real_t>(x) / MATRIX_SIZE, static_cast<real_t>(y) / MATRIX_SIZE));
 			
-			if (x < matrix_size - 1 && y < matrix_size - 1) {
+			if (x < MATRIX_SIZE - 1 && y < MATRIX_SIZE - 1) {
 				indices.set(indices_index++, vertex_index);
 				indices.set(indices_index++, vertex_index + vertices_per_line + 1);
 				indices.set(indices_index++, vertex_index + vertices_per_line);
@@ -291,10 +291,10 @@ Ref<ArrayMesh> ProceduralTerrain::_generate_mesh(const Array& matrix, const int 
 }
 
 void ProceduralTerrain::_generate_material(const Array& matrix, const Ref<StandardMaterial3D>& material) {
-	const Ref<Image> image = Image::create_empty(matrix_size, matrix_size, false, Image::FORMAT_RGB8);
-	for (int y = 0; y < matrix_size; y++) {
-		for (int x = 0; x < matrix_size; x++) {
-			const real_t height = matrix[y * matrix_size + x];
+	const Ref<Image> image = Image::create_empty(MATRIX_SIZE, MATRIX_SIZE, false, Image::FORMAT_RGB8);
+	for (int y = 0; y < MATRIX_SIZE; y++) {
+		for (int x = 0; x < MATRIX_SIZE; x++) {
+			const real_t height = matrix[y * MATRIX_SIZE + x];
 			Color color;
 			
 			if (height < 0.3f) {
@@ -326,13 +326,13 @@ void ProceduralTerrain::_generate_material(const Array& matrix, const Ref<Standa
 
 Array ProceduralTerrain::_generate_falloff(const Vector2 falloff) {
 	Array map{};
-	map.resize(matrix_size * matrix_size);
+	map.resize(MATRIX_SIZE * MATRIX_SIZE);
 	int index = 0;
 	
-	for (int i = 0; i < matrix_size; i++) {
-		for (int j = 0; j < matrix_size; j++) {
-			const real_t x = static_cast<real_t>(i) / matrix_size * 2 - 1;
-			const real_t y = static_cast<real_t>(j) / matrix_size * 2 - 1;
+	for (int i = 0; i < MATRIX_SIZE; i++) {
+		for (int j = 0; j < MATRIX_SIZE; j++) {
+			const real_t x = static_cast<real_t>(i) / MATRIX_SIZE * 2 - 1;
+			const real_t y = static_cast<real_t>(j) / MATRIX_SIZE * 2 - 1;
 			const real_t value = MAX(ABS(x), ABS(y));
 
 			const real_t a = falloff.x;

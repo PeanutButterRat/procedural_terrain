@@ -6,10 +6,10 @@
 
 #include "scene/resources/curve.h"
 
-constexpr int min_octaves = 1;
-constexpr int max_octaves = 10;
-constexpr int min_level_of_detail = 0;
-constexpr int max_level_of_detail = 6;
+constexpr int MIN_OCTAVES = 1;
+constexpr int MAX_OCTAVES = 10;
+constexpr int MIN_LEVEL_OF_DETAIL = 0;
+constexpr int MAX_LEVEL_OF_DETAIL = 6;
 
 
 class ProceduralTerrainParameters : public Resource {
@@ -27,8 +27,8 @@ class ProceduralTerrainParameters : public Resource {
     
 public:
     ProceduralTerrainParameters() {
-        octaves = min_octaves;
-        level_of_detail = max_level_of_detail;
+        octaves = MIN_OCTAVES;
+        level_of_detail = MAX_LEVEL_OF_DETAIL;
         lacunarity = 1.0f;
         persistence = 1.0f;
         height_scale = 10.0f;
@@ -65,10 +65,10 @@ public:
     Ref<Curve> get_height_curve() const { return height_curve; };
     
     void set_octaves(const int p_octaves) {
-        if (p_octaves > max_octaves || p_octaves < min_octaves) {
-            WARN_PRINT(String("Octaves must be within the range of") + min_octaves + " and " + max_octaves + ", value will be clamped.");
+        if (p_octaves > MAX_OCTAVES || p_octaves < MIN_OCTAVES) {
+            WARN_PRINT(String("Octaves must be within the range of") + MIN_OCTAVES + " and " + MAX_OCTAVES + ", value will be clamped.");
         }
-        octaves = CLAMP(p_octaves, min_octaves, max_octaves);
+        octaves = CLAMP(p_octaves, MIN_OCTAVES, MAX_OCTAVES);
         _update();
     }
     int get_octaves() const { return octaves; }
@@ -113,17 +113,17 @@ protected:
         
         ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "noise", PROPERTY_HINT_RESOURCE_TYPE, "FastNoiseLite"), "set_noise", "get_noise");
         ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "height_curve", PROPERTY_HINT_RESOURCE_TYPE, "Curve"), "set_height_curve", "get_height_curve");
-        ADD_PROPERTY(PropertyInfo(Variant::INT, "octaves", PROPERTY_HINT_RANGE, itos(min_octaves) + "," + itos(max_octaves) + ",1"), "set_octaves", "get_octaves");
+        ADD_PROPERTY(PropertyInfo(Variant::INT, "octaves", PROPERTY_HINT_RANGE, itos(MIN_OCTAVES) + "," + itos(MAX_OCTAVES) + ",1"), "set_octaves", "get_octaves");
         ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "lacunarity"), "set_lacunarity", "get_lacunarity");
         ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "persistence"), "set_persistence", "get_persistence");
         
         ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "height_scale"), "set_height_scale", "get_height_scale");
         ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "falloff"), "set_falloff", "get_falloff");
 
-        BIND_CONSTANT(min_level_of_detail);
-        BIND_CONSTANT(max_level_of_detail);
-        BIND_CONSTANT(min_octaves);
-        BIND_CONSTANT(max_octaves);
+        BIND_CONSTANT(MIN_LEVEL_OF_DETAIL);
+        BIND_CONSTANT(MAX_LEVEL_OF_DETAIL);
+        BIND_CONSTANT(MIN_OCTAVES);
+        BIND_CONSTANT(MAX_OCTAVES);
     };
 
 private:
