@@ -37,7 +37,7 @@ public:
         detail_offsets = p_detail_offsets;
     }
     PackedInt32Array get_detail_offsets() const { return detail_offsets; }
-
+    
     void set_terrain_parameters(const  Ref<ProceduralTerrainParameters>& parameters) {
         if (terrain_parameters.is_valid()) {
             terrain_parameters->disconnect_changed(callable_mp(this, &ProceduralTerrain::clear_chunks));
@@ -51,10 +51,9 @@ public:
     }
     Ref<ProceduralTerrainParameters> get_terrain_parameters() const { return terrain_parameters; }
     
-    void clear_chunks();
-    
     static Ref<Mesh> generate_terrain(const Ref<ProceduralTerrainParameters>& parameters, const Ref<StandardMaterial3D>& material);
     
+    void clear_chunks();
     ProceduralTerrain();
 
 protected:
@@ -62,12 +61,14 @@ protected:
     void _notification(int p_what);
 
 private:
-    void _update();
+    void _internal_process();
 
     static Array _generate_matrix(int octaves, const Ref<FastNoiseLite>& noise, real_t persistence, real_t lacunarity);
-    static Ref<ArrayMesh> _generate_mesh(const Array& matrix, int level_of_detail, const Ref<Curve>& height_curve, real_t height_scale);
+    static Ref<Mesh> _generate_noise_mesh(const Array& matrix, int level_of_detail, const Ref<Curve>& height_curve, real_t height_scale);
+    static Ref<Mesh> _generate_plane_mesh();
     static void ProceduralTerrain::_generate_material(const Array& matrix, const Ref<Gradient>& color_map, const Ref<StandardMaterial3D>& material);
     static Array _generate_falloff(Vector2 falloff);
+    static void _apply_falloff(Array matrix, const Array& falloff);
 };
 
 #endif

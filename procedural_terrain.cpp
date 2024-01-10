@@ -5,6 +5,7 @@
 #include "scene/resources/texture.h"
 #include "scene/resources/surface_tool.h"
 #include "scene/resources/image_texture.h"
+#include "scene/resources/primitive_meshes.h"
 
 #include "core/math/random_number_generator.h"
 #include "core/math/math_funcs.h"
@@ -46,7 +47,7 @@ ProceduralTerrain::ProceduralTerrain() {
 
 void ProceduralTerrain::_notification(const int p_what) {
 	if (p_what == NOTIFICATION_INTERNAL_PROCESS) {
-		_update();
+		_internal_process();
 	}
 }
 
@@ -62,7 +63,7 @@ void ProceduralTerrain::clear_chunks() {
 	visible_chunks.clear();
 }
 
-void ProceduralTerrain::_update() {
+void ProceduralTerrain::_internal_process() {
 	for (int i = 0; i < visible_chunks.size(); i++) {
 		ProceduralTerrainChunk* chunk = cast_to<ProceduralTerrainChunk>(visible_chunks[i]);
 		chunk->set_visible(false);
@@ -90,7 +91,6 @@ void ProceduralTerrain::_update() {
 					if (!generated_chunks.has(chunk_coordinates)) {
 						ProceduralTerrainChunk* chunk = memnew(ProceduralTerrainChunk);
 						generated_chunks[chunk_coordinates] = chunk;
-						chunk->set_name("__Chunk " + chunk_coordinates);
 						add_child(chunk, false, INTERNAL_MODE_BACK);
 						
 						const Vector2 chunk_position = chunk_coordinates * CHUNK_SIZE;
@@ -109,24 +109,41 @@ void ProceduralTerrain::_update() {
 }
 
 Ref<Mesh> ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainParameters>& parameters, const Ref<StandardMaterial3D>& material) {
-	Array matrix = _generate_matrix(parameters->get_octaves(), parameters->get_noise(), parameters->get_persistence(), parameters->get_lacunarity());
-	const Ref<ArrayMesh> mesh = _generate_mesh(matrix, parameters->get_level_of_detail(), parameters->get_height_curve(), parameters->get_height_scale());
+	ERR_FAIL_NULL_V(parameters, nullptr);
+	ERR_FAIL_COND_V_MSG(parameters->has_valid_subresources() == false, nullptr, "Terrain parameters has a null subresource.");
 	
-	if (parameters->get_falloff() != Vector2{}) {
-		Array map = _generate_falloff(parameters->get_falloff());
-		int index = 0;
-		for (int y = 0; y < MATRIX_SIZE; y++) {
-			for (int x = 0; x < MATRIX_SIZE; x++) {
-				const real_t falloff_amount = map[index];
-				const real_t previous_value = matrix[index];
-				matrix[index] = previous_value - falloff_amount;
-				index++;
-			}
-		}
+	Array matrix;
+	Ref<Mesh> mesh;
+	Ref<Gradient> color_map;
+	
+	switch (parameters->get_generation_mode()) {
+		case ProceduralTerrainParameters::GenerationMode::GENERATION_MODE_NORMAL:
+			matrix = _generate_matrix(parameters->get_octaves(), parameters->get_noise(), parameters->get_persistence(), parameters->get_lacunarity());
+			_apply_falloff(matrix, _generate_falloff(parameters->get_falloff()));
+			color_map = parameters->get_color_map();
+			mesh = _generate_noise_mesh(matrix, parameters->get_level_of_detail(), parameters->get_height_curve(), parameters->get_height_scale());
+			break;
+		case ProceduralTerrainParameters::GenerationMode::GENERATION_MODE_FALLOFF:
+			matrix = _generate_falloff(parameters->get_falloff());
+			color_map.instantiate();
+			mesh = _generate_plane_mesh();
+			break;
+		case ProceduralTerrainParameters::GenerationMode::GENERATION_MODE_NOISE_SHADED:
+			matrix = _generate_matrix(parameters->get_octaves(), parameters->get_noise(), parameters->get_persistence(), parameters->get_lacunarity());
+			_apply_falloff(matrix, _generate_falloff(parameters->get_falloff()));
+			color_map = parameters->get_color_map();
+			mesh = _generate_plane_mesh();
+			break;
+		case ProceduralTerrainParameters::GenerationMode::GENERATION_MODE_NOISE_UNSHADED:
+			matrix = _generate_matrix(parameters->get_octaves(), parameters->get_noise(), parameters->get_persistence(), parameters->get_lacunarity());
+			_apply_falloff(matrix, _generate_falloff(parameters->get_falloff()));
+			color_map.instantiate();
+			mesh = _generate_plane_mesh();
+			break;
 	}
 	
 	if (material.is_valid()) {
-		_generate_material(matrix, parameters->get_color_map(), material);
+		_generate_material(matrix, color_map, material);
 	}
 	
 	return mesh;
@@ -190,7 +207,7 @@ Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoise
 	return matrix;
 }
 
-Ref<ArrayMesh> ProceduralTerrain::_generate_mesh(const Array& matrix, const int level_of_detail, const Ref<Curve>& height_curve, const real_t height_scale) {
+Ref<Mesh> ProceduralTerrain::_generate_noise_mesh(const Array& matrix, const int level_of_detail, const Ref<Curve>& height_curve, const real_t height_scale) {
 	const int increment = CLAMP((MAX_LEVEL_OF_DETAIL - level_of_detail) * 2, 1, 12);
 	const int vertices_per_line = (MATRIX_SIZE - 1) / increment + 1;
 
@@ -259,9 +276,18 @@ Ref<ArrayMesh> ProceduralTerrain::_generate_mesh(const Array& matrix, const int 
 	arrays[Mesh::ARRAY_VERTEX] = vertices;
 	arrays[Mesh::ARRAY_NORMAL] = normals;
 
-	Ref<ArrayMesh> mesh = memnew(ArrayMesh);
+	Ref<ArrayMesh> mesh{};
+	mesh.instantiate();
 	mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
 
+	return mesh;
+}
+
+Ref<Mesh> ProceduralTerrain::_generate_plane_mesh() {
+	Ref<PlaneMesh> mesh{};
+	mesh.instantiate();
+	mesh->set_size(Vector2{CHUNK_SIZE, CHUNK_SIZE});
+	
 	return mesh;
 }
 
@@ -284,6 +310,11 @@ Array ProceduralTerrain::_generate_falloff(const Vector2 falloff) {
 	Array map{};
 	map.resize(MATRIX_SIZE * MATRIX_SIZE);
 	int index = 0;
+
+	if (falloff == Vector2{}) {
+		map.fill(0);
+		return map;
+	}
 	
 	for (int i = 0; i < MATRIX_SIZE; i++) {
 		for (int j = 0; j < MATRIX_SIZE; j++) {
@@ -300,4 +331,16 @@ Array ProceduralTerrain::_generate_falloff(const Vector2 falloff) {
 	}
 	
 	return map;
+}
+
+void ProceduralTerrain::_apply_falloff(Array matrix, const Array& falloff) {
+	int index = 0;
+	for (int y = 0; y < MATRIX_SIZE; y++) {
+		for (int x = 0; x < MATRIX_SIZE; x++) {
+			const real_t falloff_amount = falloff[index];
+			const real_t previous_value = matrix[index];
+			matrix[index] = previous_value - falloff_amount;
+			index++;
+		}
+	}
 }

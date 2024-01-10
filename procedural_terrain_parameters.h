@@ -15,6 +15,16 @@ constexpr int MAX_LEVEL_OF_DETAIL = 6;
 class ProceduralTerrainParameters : public Resource {
     GDCLASS(ProceduralTerrainParameters, Resource);
 
+public:
+    enum GenerationMode {
+        GENERATION_MODE_NORMAL,
+        GENERATION_MODE_FALLOFF,
+        GENERATION_MODE_NOISE_UNSHADED,
+        GENERATION_MODE_NOISE_SHADED,
+    };
+    
+private:
+    GenerationMode generation_mode;
     Ref<FastNoiseLite> noise;
     Ref<Curve> height_curve;
     Ref<Gradient> color_map;
@@ -27,12 +37,16 @@ class ProceduralTerrainParameters : public Resource {
     
 public:
     ProceduralTerrainParameters() {
+        generation_mode = GENERATION_MODE_NORMAL;
         octaves = MIN_OCTAVES;
         level_of_detail = MAX_LEVEL_OF_DETAIL;
         lacunarity = 1.0f;
         persistence = 1.0f;
         height_scale = 10.0f;
     };
+
+    void set_generation_mode(GenerationMode mode) { generation_mode = mode; _update(); }
+    GenerationMode get_generation_mode() const { return generation_mode; }
     
     void set_noise(const Ref<FastNoiseLite> &p_noise) {
         if (noise.is_valid()) {
@@ -103,8 +117,13 @@ public:
     void set_falloff(const Vector2 p_falloff) { falloff = p_falloff; _update(); }
     Vector2 get_falloff() const { return falloff; }
 
+    bool has_valid_subresources() { return noise.is_valid() && height_curve.is_valid() && color_map.is_valid(); }
+
 protected:
     static void _bind_methods() {
+        ClassDB::bind_method(D_METHOD("set_generation_mode", "mode"), &ProceduralTerrainParameters::set_generation_mode);
+        ClassDB::bind_method(D_METHOD("get_generation_mode"), &ProceduralTerrainParameters::get_generation_mode);
+        
 		ClassDB::bind_method(D_METHOD("set_noise", "noise"), &ProceduralTerrainParameters::set_noise);
 		ClassDB::bind_method(D_METHOD("get_noise"), &ProceduralTerrainParameters::get_noise);
 
@@ -128,7 +147,8 @@ protected:
         
 		ClassDB::bind_method(D_METHOD("set_falloff", "falloff"), &ProceduralTerrainParameters::set_falloff);
 		ClassDB::bind_method(D_METHOD("get_falloff"), &ProceduralTerrainParameters::get_falloff);
-        
+
+        ADD_PROPERTY(PropertyInfo(Variant::INT, "generation_mode", PROPERTY_HINT_ENUM, "Normal,Falloff,Noise Unshaded,Noise Shaded"), "set_generation_mode", "get_generation_mode");
         ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "noise", PROPERTY_HINT_RESOURCE_TYPE, "FastNoiseLite"), "set_noise", "get_noise");
         ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "height_curve", PROPERTY_HINT_RESOURCE_TYPE, "Curve"), "set_height_curve", "get_height_curve");
         ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "color_map", PROPERTY_HINT_RESOURCE_TYPE, "Gradient"), "set_color_map", "get_color_map");
@@ -142,10 +162,17 @@ protected:
         BIND_CONSTANT(MAX_LEVEL_OF_DETAIL);
         BIND_CONSTANT(MIN_OCTAVES);
         BIND_CONSTANT(MAX_OCTAVES);
+
+        BIND_ENUM_CONSTANT(GENERATION_MODE_NORMAL);
+        BIND_ENUM_CONSTANT(GENERATION_MODE_FALLOFF);
+        BIND_ENUM_CONSTANT(GENERATION_MODE_NOISE_UNSHADED);
+        BIND_ENUM_CONSTANT(GENERATION_MODE_NOISE_SHADED);
     };
 
 private:
     void _update() { emit_changed(); }
 };
+
+VARIANT_ENUM_CAST(ProceduralTerrainParameters::GenerationMode);
 
 #endif
