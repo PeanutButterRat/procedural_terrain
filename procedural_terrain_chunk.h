@@ -8,8 +8,8 @@
 #include "procedural_terrain.h"
 #include "procedural_terrain_parameters.h"
 
-
 class ProceduralTerrainParameters;
+
 
 class ProceduralTerrainChunk : public MeshInstance3D {
     Dictionary meshes;
@@ -33,22 +33,25 @@ public:
             }
         }
         else if (!meshes.has(level_of_detail)) {
-            Ref<StandardMaterial3D> material{};
-            material.instantiate();
-            material->set_texture_filter(BaseMaterial3D::TEXTURE_FILTER_NEAREST);
-            materials[level_of_detail] = material;
-		
-            Ref<core_bind::Thread> thread{};
-            thread.instantiate();
-            threads[level_of_detail] = thread;
-		
             const ProceduralTerrain* terrain = cast_to<ProceduralTerrain>(get_parent());
             const Ref<ProceduralTerrainParameters> parameters = terrain->get_terrain_parameters()->duplicate(true);
-            const Ref<FastNoiseLite> noise = parameters->get_noise();
-            noise->set_offset(noise->get_offset() + Vector3{get_position().z, -get_position().x, 0.0f});
-            parameters->set_level_of_detail(level_of_detail);
-            
-            thread->start(Callable{terrain, "generate_terrain"}.bind(parameters, material));
+
+            if (parameters.is_valid() && parameters->has_valid_subresources()) {
+                Ref<StandardMaterial3D> material{};
+                material.instantiate();
+                material->set_texture_filter(BaseMaterial3D::TEXTURE_FILTER_NEAREST);
+                materials[level_of_detail] = material;
+		
+                Ref<core_bind::Thread> thread{};
+                thread.instantiate();
+                threads[level_of_detail] = thread;
+
+                const Ref<FastNoiseLite> noise = parameters->get_noise();
+                noise->set_offset(noise->get_offset() + Vector3{get_position().z, -get_position().x, 0.0f});
+                parameters->set_level_of_detail(level_of_detail);
+    
+                thread->start(Callable{terrain, "generate_terrain"}.bind(parameters, material));
+            }
         }
 	
         if (meshes.has(level_of_detail)) {
