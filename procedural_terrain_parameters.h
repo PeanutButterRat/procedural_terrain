@@ -34,6 +34,7 @@ private:
     real_t persistence;
     real_t height_scale;
     Vector2 falloff;
+    bool flatshaded;
     
 public:
     ProceduralTerrainParameters() {
@@ -43,6 +44,7 @@ public:
         lacunarity = 1.0f;
         persistence = 1.0f;
         height_scale = 10.0f;
+        flatshaded = false;
     };
 
     void set_generation_mode(GenerationMode mode) { generation_mode = mode; _update(); }
@@ -117,6 +119,9 @@ public:
     void set_falloff(const Vector2 p_falloff) { falloff = p_falloff; _update(); }
     Vector2 get_falloff() const { return falloff; }
 
+    void set_flatshaded(const bool p_flatshaded) { flatshaded = p_flatshaded; _update(); }
+    bool get_flatshaded() const { return flatshaded; }
+    
     bool has_valid_subresources() { return noise.is_valid() && height_curve.is_valid() && color_map.is_valid(); }
 
 protected:
@@ -148,6 +153,9 @@ protected:
 		ClassDB::bind_method(D_METHOD("set_falloff", "falloff"), &ProceduralTerrainParameters::set_falloff);
 		ClassDB::bind_method(D_METHOD("get_falloff"), &ProceduralTerrainParameters::get_falloff);
 
+        ClassDB::bind_method(D_METHOD("set_flatshaded", "flatshaded"), &ProceduralTerrainParameters::set_flatshaded);
+        ClassDB::bind_method(D_METHOD("get_flatshaded"), &ProceduralTerrainParameters::get_flatshaded);
+
         ADD_PROPERTY(PropertyInfo(Variant::INT, "generation_mode", PROPERTY_HINT_ENUM, "Normal,Falloff,Noise Unshaded,Noise Shaded"), "set_generation_mode", "get_generation_mode");
         ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "noise", PROPERTY_HINT_RESOURCE_TYPE, "FastNoiseLite"), "set_noise", "get_noise");
         ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "height_curve", PROPERTY_HINT_RESOURCE_TYPE, "Curve"), "set_height_curve", "get_height_curve");
@@ -157,6 +165,7 @@ protected:
         ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "persistence"), "set_persistence", "get_persistence");
         ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "height_scale"), "set_height_scale", "get_height_scale");
         ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "falloff"), "set_falloff", "get_falloff");
+        ADD_PROPERTY(PropertyInfo(Variant::BOOL, "flatshaded"), "set_flatshaded", "get_flatshaded");
 
         BIND_CONSTANT(MIN_LEVEL_OF_DETAIL);
         BIND_CONSTANT(MAX_LEVEL_OF_DETAIL);

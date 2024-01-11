@@ -121,7 +121,8 @@ Ref<Mesh> ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainParamet
 			matrix = _generate_matrix(parameters->get_octaves(), parameters->get_noise(), parameters->get_persistence(), parameters->get_lacunarity());
 			_apply_falloff(matrix, _generate_falloff(parameters->get_falloff()));
 			color_map = parameters->get_color_map();
-			mesh = _generate_noise_mesh(matrix, parameters->get_level_of_detail(), parameters->get_height_curve(), parameters->get_height_scale());
+			mesh = parameters->get_flatshaded() ? _generate_flatshaded_noise_mesh(matrix, parameters->get_level_of_detail(), parameters->get_height_curve(), parameters->get_height_scale()) :
+				_generate_noise_mesh(matrix, parameters->get_level_of_detail(), parameters->get_height_curve(), parameters->get_height_scale());
 			break;
 		case ProceduralTerrainParameters::GenerationMode::GENERATION_MODE_FALLOFF:
 			matrix = _generate_falloff(parameters->get_falloff());
@@ -179,8 +180,8 @@ Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoise
 			
 			for (int octave = 0; octave < octaves; octave++) {
 				const Vector2 offset = offsets[octave];
-				const real_t sample_x = (-x - HALF_MATRIX_SIZE + offset.x) * frequency;
-				const real_t sample_y = (y - HALF_MATRIX_SIZE + offset.y) * frequency;
+				const real_t sample_x = (-static_cast<real_t>(x) - HALF_MATRIX_SIZE + offset.x) * frequency;
+				const real_t sample_y = (static_cast<real_t>(y) - HALF_MATRIX_SIZE + offset.y) * frequency;
 				const real_t sample = noise->get_noise_3d(sample_y, sample_x, 0.0f);
 				
 				final_value += sample * amplitude;
@@ -215,26 +216,24 @@ Ref<Mesh> ProceduralTerrain::_generate_noise_mesh(const Array& matrix, const int
 	arrays.resize(Mesh::ARRAY_MAX);
 
 	PackedVector3Array vertices{};
-	vertices.resize(pow(vertices_per_line, 2));
-
 	PackedVector2Array uvs{};
-	uvs.resize(vertices.size());
-
 	PackedInt32Array indices{};
-	indices.resize(pow(vertices_per_line - 1, 2) * 6);
-
 	PackedVector3Array normals{};
+
+	vertices.resize(pow(vertices_per_line, 2));
+	uvs.resize(vertices.size());
+	indices.resize(pow(vertices_per_line - 1, 2) * 6);
 	normals.resize(vertices.size());
 	
 	int vertex_index = 0;
 	int indices_index = 0;
-	
+
 	for (int y = 0; y < MATRIX_SIZE; y += increment) {
 		for (int x = 0; x < MATRIX_SIZE; x += increment) {
 			const real_t height = height_curve->sample(matrix[y * MATRIX_SIZE + x]) * height_scale;
-			vertices.set(vertex_index, Vector3(x - CENTER_OFFSET, height, y - CENTER_OFFSET));
+			vertices.set(vertex_index, Vector3(static_cast<real_t>(x) - CENTER_OFFSET, height, static_cast<real_t>(y) - CENTER_OFFSET));
 			uvs.set(vertex_index, Vector2(static_cast<real_t>(x) / MATRIX_SIZE, static_cast<real_t>(y) / MATRIX_SIZE));
-			
+		
 			if (x < MATRIX_SIZE - 1 && y < MATRIX_SIZE - 1) {
 				indices.set(indices_index++, vertex_index);
 				indices.set(indices_index++, vertex_index + vertices_per_line + 1);
@@ -244,7 +243,7 @@ Ref<Mesh> ProceduralTerrain::_generate_noise_mesh(const Array& matrix, const int
 				indices.set(indices_index++, vertex_index);
 				indices.set(indices_index++, vertex_index + 1);
 			}
-			
+		
 			vertex_index++;
 		}
 	}
@@ -256,12 +255,12 @@ Ref<Mesh> ProceduralTerrain::_generate_noise_mesh(const Array& matrix, const int
 		const int a_index = indices[triangle_index];
 		const int b_index = indices[triangle_index + 1];
 		const int c_index = indices[triangle_index + 2];
-		
+	
 		Vector3 a = vertices[a_index];
 		Vector3 b = vertices[b_index];
 		Vector3 c = vertices[c_index];
 		Vector3 normal = Plane(a, b, c).normal;
-		
+	
 		normals.set(a_index, normals[a_index] + normal);
 		normals.set(b_index, normals[b_index] + normal);
 		normals.set(c_index, normals[c_index] + normal);
@@ -276,6 +275,118 @@ Ref<Mesh> ProceduralTerrain::_generate_noise_mesh(const Array& matrix, const int
 	arrays[Mesh::ARRAY_VERTEX] = vertices;
 	arrays[Mesh::ARRAY_NORMAL] = normals;
 
+	
+	Ref<ArrayMesh> mesh{};
+	mesh.instantiate();
+	mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
+
+	return mesh;
+}
+
+Ref<Mesh> ProceduralTerrain::_generate_flatshaded_noise_mesh(const Array& matrix, int level_of_detail, const Ref<Curve>& height_curve, const real_t height_scale) {
+	const int increment = CLAMP((MAX_LEVEL_OF_DETAIL - level_of_detail) * 2, 1, 12);
+	const int vertices_per_line = (MATRIX_SIZE - 1) / increment + 1;
+	
+	Array arrays{};
+	arrays.resize(Mesh::ARRAY_MAX);
+
+	PackedVector3Array vertices{};
+	PackedVector2Array uvs{};
+	PackedInt32Array indices{};
+	PackedVector3Array normals{};
+
+	indices.resize(pow(vertices_per_line - 1, 2) * 6);
+	vertices.resize(indices.size());
+	uvs.resize(vertices.size());
+	normals.resize(vertices.size());
+
+	int vertex_index = 0;
+
+	for (int y = 0; y < MATRIX_SIZE; y += increment) {
+		for (int x = 0; x < MATRIX_SIZE; x += increment) {
+			if (x < MATRIX_SIZE - 1 && y < MATRIX_SIZE - 1) {
+				Vector3 a {  // (x, y)
+					x - CENTER_OFFSET,
+					height_curve->sample(matrix[y * MATRIX_SIZE + x]) * height_scale,
+					y - CENTER_OFFSET
+				};
+				Vector2 a_uv {
+					static_cast<real_t>(x) / MATRIX_SIZE,
+					static_cast<real_t>(y) / MATRIX_SIZE
+				};
+				Vector3 b {  // (x + inc, y)
+					(x + increment) - CENTER_OFFSET,
+					height_curve->sample(matrix[y * MATRIX_SIZE + (x + increment)]) * height_scale,
+					y - CENTER_OFFSET
+				};
+				Vector2 b_uv {
+					static_cast<real_t>(x + increment) / MATRIX_SIZE,
+					static_cast<real_t>(y) / MATRIX_SIZE
+				};
+				Vector3 c {  // (x, y + inc)
+					x - CENTER_OFFSET,
+					height_curve->sample(matrix[(y + increment) * MATRIX_SIZE + x]) * height_scale,
+					(y + increment) - CENTER_OFFSET
+				};
+				Vector2 c_uv {
+					static_cast<real_t>(x) / MATRIX_SIZE,
+					static_cast<real_t>(y + increment) / MATRIX_SIZE
+				};
+				Vector3 d {  // (x + inc , y + inc)
+					(x + increment) - CENTER_OFFSET,
+					height_curve->sample(matrix[(y + increment) * MATRIX_SIZE + (x + increment)]) * height_scale,
+					(y + increment) - CENTER_OFFSET
+				};
+				Vector2 d_uv {
+					static_cast<real_t>(x + increment) / MATRIX_SIZE,
+					static_cast<real_t>(y + increment) / MATRIX_SIZE
+				};
+
+				uvs.set(vertex_index, a_uv);
+				vertices.set(vertex_index++, a);
+				uvs.set(vertex_index, d_uv);
+				vertices.set(vertex_index++, d);
+				uvs.set(vertex_index, c_uv);
+				vertices.set(vertex_index++, c);
+
+				uvs.set(vertex_index, d_uv);
+				vertices.set(vertex_index++, d);
+				uvs.set(vertex_index, a_uv);
+				vertices.set(vertex_index++, a);
+				uvs.set(vertex_index, b_uv);
+				vertices.set(vertex_index++, b);
+				
+			}
+		}
+	}
+
+	for (int i = 0; i < indices.size(); i++) {
+		indices.set(i, i);
+	}
+	
+	const int number_of_triangles = indices.size() / 3;
+
+	for (int i = 0; i < number_of_triangles; i++) {
+		const int triangle_index = i * 3;
+		const int a_index = indices[triangle_index];
+		const int b_index = indices[triangle_index + 1];
+		const int c_index = indices[triangle_index + 2];
+	
+		Vector3 a = vertices[a_index];
+		Vector3 b = vertices[b_index];
+		Vector3 c = vertices[c_index];
+		Vector3 normal = Plane(a, b, c).normal;
+	
+		normals.set(a_index, normal);
+		normals.set(b_index, normal);
+		normals.set(c_index, normal);
+	}
+
+	arrays[Mesh::ARRAY_INDEX] = indices;
+	arrays[Mesh::ARRAY_TEX_UV] = uvs;
+	arrays[Mesh::ARRAY_VERTEX] = vertices;
+	arrays[Mesh::ARRAY_NORMAL] = normals;
+	
 	Ref<ArrayMesh> mesh{};
 	mesh.instantiate();
 	mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
