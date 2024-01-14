@@ -50,7 +50,7 @@ public:
                 noise->set_offset(noise->get_offset() + Vector3{get_position().z, -get_position().x, 0.0f});
                 parameters->set_level_of_detail(level_of_detail);
     
-                thread->start(Callable{terrain, "generate_terrain"}.bind(parameters, material));
+                thread->start(Callable{terrain, "generate_terrain_placeholder"}.bind(parameters, material));
             }
         }
 	

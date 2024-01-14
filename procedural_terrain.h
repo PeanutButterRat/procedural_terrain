@@ -51,7 +51,8 @@ public:
     }
     Ref<ProceduralTerrainParameters> get_terrain_parameters() const { return terrain_parameters; }
     
-    static Ref<Mesh> generate_terrain(const Ref<ProceduralTerrainParameters>& parameters, const Ref<StandardMaterial3D>& material);
+    static Ref<Mesh> generate_terrain_placeholder(const Ref<ProceduralTerrainParameters>& parameters, const Ref<StandardMaterial3D>& material);
+    static MeshInstance3D* generate_terrain(const Ref<ProceduralTerrainParameters>& parameters);
     
     void clear_chunks();
     ProceduralTerrain();
@@ -70,6 +71,8 @@ private:
     static void ProceduralTerrain::_generate_material(const Array& matrix, const Ref<Gradient>& color_map, const Ref<StandardMaterial3D>& material);
     static Array _generate_falloff(Vector2 falloff);
     static void _apply_falloff(Array matrix, const Array& falloff);
+    
+    static Ref<StandardMaterial3D> generate_material(const Array& matrix, const Ref<Gradient>& color_map);
 };
 
 #endif
