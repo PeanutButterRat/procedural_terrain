@@ -1,7 +1,6 @@
 ﻿#ifndef PROCEDURAL_TERRAIN_PARAMETERS_H
 #define PROCEDURAL_TERRAIN_PARAMETERS_H
 
-
 #include "modules/noise/fastnoise_lite.h"
 
 #include "scene/resources/curve.h"
@@ -15,16 +14,6 @@ constexpr int MAX_LEVEL_OF_DETAIL = 6;
 class ProceduralTerrainParameters : public Resource {
     GDCLASS(ProceduralTerrainParameters, Resource);
 
-public:
-    enum GenerationMode {
-        GENERATION_MODE_NORMAL,
-        GENERATION_MODE_FALLOFF,
-        GENERATION_MODE_NOISE_UNSHADED,
-        GENERATION_MODE_NOISE_SHADED,
-    };
-    
-private:
-    GenerationMode generation_mode;
     Ref<FastNoiseLite> noise;
     Ref<Curve> height_curve;
     Ref<Gradient> color_map;
@@ -38,7 +27,6 @@ private:
     
 public:
     ProceduralTerrainParameters() {
-        generation_mode = GENERATION_MODE_NORMAL;
         octaves = MIN_OCTAVES;
         level_of_detail = MAX_LEVEL_OF_DETAIL;
         lacunarity = 1.0f;
@@ -46,9 +34,6 @@ public:
         height_scale = 10.0f;
         flatshaded = false;
     };
-
-    void set_generation_mode(GenerationMode mode) { generation_mode = mode; update(); }
-    GenerationMode get_generation_mode() const { return generation_mode; }
     
     void set_noise(const Ref<FastNoiseLite> &p_noise) {
         if (noise.is_valid()) { noise->disconnect_changed(callable_mp(this, &ProceduralTerrainParameters::update)); }
@@ -108,37 +93,33 @@ public:
 
 protected:
     static void _bind_methods() {
-        ClassDB::bind_method(D_METHOD("set_generation_mode", "mode"), &ProceduralTerrainParameters::set_generation_mode);
-        ClassDB::bind_method(D_METHOD("get_generation_mode"), &ProceduralTerrainParameters::get_generation_mode);
+		ClassDB::bind_method(D_METHOD("set_noise", "noise"), &set_noise);
+		ClassDB::bind_method(D_METHOD("get_noise"), &get_noise);
+
+		ClassDB::bind_method(D_METHOD("set_height_curve", "curve"), &set_height_curve);
+		ClassDB::bind_method(D_METHOD("get_height_curve"), &get_height_curve);
+
+        ClassDB::bind_method(D_METHOD("set_color_map", "color_map"), &set_color_map);
+        ClassDB::bind_method(D_METHOD("get_color_map"), &get_color_map);
         
-		ClassDB::bind_method(D_METHOD("set_noise", "noise"), &ProceduralTerrainParameters::set_noise);
-		ClassDB::bind_method(D_METHOD("get_noise"), &ProceduralTerrainParameters::get_noise);
+        ClassDB::bind_method(D_METHOD("set_octaves", "octaves"), &set_octaves);
+		ClassDB::bind_method(D_METHOD("get_octaves"), &get_octaves);
 
-		ClassDB::bind_method(D_METHOD("set_height_curve", "curve"), &ProceduralTerrainParameters::set_height_curve);
-		ClassDB::bind_method(D_METHOD("get_height_curve"), &ProceduralTerrainParameters::get_height_curve);
+		ClassDB::bind_method(D_METHOD("set_lacunarity", "lacunarity"), &set_lacunarity);
+		ClassDB::bind_method(D_METHOD("get_lacunarity"), &get_lacunarity);
 
-        ClassDB::bind_method(D_METHOD("set_color_map", "color_map"), &ProceduralTerrainParameters::set_color_map);
-        ClassDB::bind_method(D_METHOD("get_color_map"), &ProceduralTerrainParameters::get_color_map);
-        
-        ClassDB::bind_method(D_METHOD("set_octaves", "octaves"), &ProceduralTerrainParameters::set_octaves);
-		ClassDB::bind_method(D_METHOD("get_octaves"), &ProceduralTerrainParameters::get_octaves);
-
-		ClassDB::bind_method(D_METHOD("set_lacunarity", "lacunarity"), &ProceduralTerrainParameters::set_lacunarity);
-		ClassDB::bind_method(D_METHOD("get_lacunarity"), &ProceduralTerrainParameters::get_lacunarity);
-
-		ClassDB::bind_method(D_METHOD("set_persistence", "persistence"), &ProceduralTerrainParameters::set_persistence);
-		ClassDB::bind_method(D_METHOD("get_persistence"), &ProceduralTerrainParameters::get_persistence);
+		ClassDB::bind_method(D_METHOD("set_persistence", "persistence"), &set_persistence);
+		ClassDB::bind_method(D_METHOD("get_persistence"), &get_persistence);
 		
-		ClassDB::bind_method(D_METHOD("set_height_scale", "scale"), &ProceduralTerrainParameters::set_height_scale);
-		ClassDB::bind_method(D_METHOD("get_height_scale"), &ProceduralTerrainParameters::get_height_scale);
+		ClassDB::bind_method(D_METHOD("set_height_scale", "scale"), &set_height_scale);
+		ClassDB::bind_method(D_METHOD("get_height_scale"), &get_height_scale);
         
-		ClassDB::bind_method(D_METHOD("set_falloff", "falloff"), &ProceduralTerrainParameters::set_falloff);
-		ClassDB::bind_method(D_METHOD("get_falloff"), &ProceduralTerrainParameters::get_falloff);
+		ClassDB::bind_method(D_METHOD("set_falloff", "falloff"), &set_falloff);
+		ClassDB::bind_method(D_METHOD("get_falloff"), &get_falloff);
 
-        ClassDB::bind_method(D_METHOD("set_flatshaded", "flatshaded"), &ProceduralTerrainParameters::set_flatshaded);
-        ClassDB::bind_method(D_METHOD("get_flatshaded"), &ProceduralTerrainParameters::get_flatshaded);
+        ClassDB::bind_method(D_METHOD("set_flatshaded", "flatshaded"), &set_flatshaded);
+        ClassDB::bind_method(D_METHOD("get_flatshaded"), &get_flatshaded);
 
-        ADD_PROPERTY(PropertyInfo(Variant::INT, "generation_mode", PROPERTY_HINT_ENUM, "Normal,Falloff,Noise Unshaded,Noise Shaded"), "set_generation_mode", "get_generation_mode");
         ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "noise", PROPERTY_HINT_RESOURCE_TYPE, "FastNoiseLite"), "set_noise", "get_noise");
         ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "height_curve", PROPERTY_HINT_RESOURCE_TYPE, "Curve"), "set_height_curve", "get_height_curve");
         ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "color_map", PROPERTY_HINT_RESOURCE_TYPE, "Gradient"), "set_color_map", "get_color_map");
@@ -153,17 +134,10 @@ protected:
         BIND_CONSTANT(MAX_LEVEL_OF_DETAIL);
         BIND_CONSTANT(MIN_OCTAVES);
         BIND_CONSTANT(MAX_OCTAVES);
-
-        BIND_ENUM_CONSTANT(GENERATION_MODE_NORMAL);
-        BIND_ENUM_CONSTANT(GENERATION_MODE_FALLOFF);
-        BIND_ENUM_CONSTANT(GENERATION_MODE_NOISE_UNSHADED);
-        BIND_ENUM_CONSTANT(GENERATION_MODE_NOISE_SHADED);
     };
 
 private:
     void update() { emit_changed(); }
 };
-
-VARIANT_ENUM_CAST(ProceduralTerrainParameters::GenerationMode);
 
 #endif

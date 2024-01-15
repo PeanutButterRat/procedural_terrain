@@ -1,12 +1,15 @@
 #include "procedural_terrain.h"
 
-
 #include "scene/resources/curve.h"
 #include "scene/resources/texture.h"
 #include "scene/resources/surface_tool.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/primitive_meshes.h"
+#include "scene/resources/concave_polygon_shape_3d.h"
+
 #include "scene/3d/mesh_instance_3d.h"
+#include "scene/3d/collision_shape_3d.h"
+#include "scene/3d/physics_body_3d.h"
 
 #include "core/math/random_number_generator.h"
 #include "core/math/math_funcs.h"
@@ -24,21 +27,30 @@ constexpr real_t NORMALIZATION_FACTOR = 0.9f;
 
 
 void ProceduralTerrain::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("set_viewer", "observer"), &ProceduralTerrain::set_viewer);
-	ClassDB::bind_method(D_METHOD("get_viewer"), &ProceduralTerrain::get_viewer);
+	ClassDB::bind_method(D_METHOD("set_generation_mode", "mode"), &set_generation_mode);
+	ClassDB::bind_method(D_METHOD("get_generation_mode"), &get_generation_mode);
 	
-	ClassDB::bind_method(D_METHOD("set_detail_offsets", "detail_offsets"), &ProceduralTerrain::set_detail_offsets);
-	ClassDB::bind_method(D_METHOD("get_detail_offsets"), &ProceduralTerrain::get_detail_offsets);
+	ClassDB::bind_method(D_METHOD("set_viewer", "observer"), &set_viewer);
+	ClassDB::bind_method(D_METHOD("get_viewer"), &get_viewer);
 	
-	ClassDB::bind_method(D_METHOD("set_terrain_parameters", "parameters"), &ProceduralTerrain::set_terrain_parameters);
-	ClassDB::bind_method(D_METHOD("get_terrain_parameters"), &ProceduralTerrain::get_terrain_parameters);
+	ClassDB::bind_method(D_METHOD("set_detail_offsets", "detail_offsets"), &set_detail_offsets);
+	ClassDB::bind_method(D_METHOD("get_detail_offsets"), &get_detail_offsets);
 	
-	ClassDB::bind_method(D_METHOD("clear_chunks"), &ProceduralTerrain::clear_chunks);
-	ClassDB::bind_static_method("ProceduralTerrain", D_METHOD("generate_terrain", "parameters"), &generate_terrain);
+	ClassDB::bind_method(D_METHOD("set_terrain_parameters", "parameters"), &set_terrain_parameters);
+	ClassDB::bind_method(D_METHOD("get_terrain_parameters"), &get_terrain_parameters);
 	
+	ClassDB::bind_method(D_METHOD("clear_chunks"), &clear_chunks);
+	ClassDB::bind_static_method("ProceduralTerrain", D_METHOD("generate_terrain", "parameters", "collision", "mode"), &generate_terrain, DEFVAL(true), DEFVAL(GENERATION_MODE_NORMAL));
+
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "generation_mode", PROPERTY_HINT_ENUM, "Normal,Falloff,Noise Unshaded,Noise Shaded"), "set_generation_mode", "get_generation_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "viewer", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D"), "set_viewer", "get_viewer");
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_FLOAT32_ARRAY, "detail_offsets"), "set_detail_offsets", "get_detail_offsets");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "parameters", PROPERTY_HINT_RESOURCE_TYPE, "ProceduralTerrainParameters"), "set_terrain_parameters", "get_terrain_parameters");
+
+	BIND_ENUM_CONSTANT(GENERATION_MODE_NORMAL);
+	BIND_ENUM_CONSTANT(GENERATION_MODE_FALLOFF);
+	BIND_ENUM_CONSTANT(GENERATION_MODE_NOISE_UNSHADED);
+	BIND_ENUM_CONSTANT(GENERATION_MODE_NOISE_SHADED);
 }
 
 void ProceduralTerrain::clear_chunks() {
@@ -57,6 +69,7 @@ void ProceduralTerrain::clear_chunks() {
 	
 	generated_chunks.clear();
 	visible_chunks.clear();
+	threads.clear();
 }
 
 void ProceduralTerrain::_internal_process() {
@@ -66,58 +79,57 @@ void ProceduralTerrain::_internal_process() {
 	}
 	
 	visible_chunks.clear();
+
+	const Node3D* observer = cast_to<Node3D>(get_node_or_null(viewer));
+	const Vector2 relative_observer_position {
+		observer ? (observer->get_global_position() - get_global_position()).x : 0.0f,
+		observer ? (observer->get_global_position() - get_global_position()).z : 0.0f
+	};
 	
-	if (const Node3D* observer = cast_to<Node3D>(get_node_or_null(viewer))) {
-		const Vector2 relative_observer_position {
-			(observer->get_global_position() - get_global_position()).x,
-			(observer->get_global_position() - get_global_position()).z
-		};
-		
-		const real_t x = round(relative_observer_position.x / (CHUNK_SIZE * get_scale().x));
-		const real_t y = round(relative_observer_position.y / (CHUNK_SIZE * get_scale().z));
+	const real_t x = round(relative_observer_position.x / (CHUNK_SIZE * get_scale().x));
+	const real_t y = round(relative_observer_position.y / (CHUNK_SIZE * get_scale().z));
 
-		for (int ring = 0; ring < detail_offsets.size(); ring++) {
-			for (int y_offset = -ring; y_offset <= ring; y_offset++) {
-				for (int x_offset = -ring; x_offset <= ring; x_offset++) {
-					if (ABS(y_offset) != ring && ABS(x_offset) != ring) {
-						continue;
+	for (int ring = 0; ring < detail_offsets.size(); ring++) {
+		for (int y_offset = -ring; y_offset <= ring; y_offset++) {
+			for (int x_offset = -ring; x_offset <= ring; x_offset++) {
+				if (ABS(y_offset) != ring && ABS(x_offset) != ring) {
+					continue;
+				}
+				const int detail = detail_offsets[ring];
+				const Vector3 chunk_coordinates{x + x_offset, y + y_offset, static_cast<real_t>(detail)};
+				const Vector3 chunk_position = Vector3(chunk_coordinates.x, 0.0f, chunk_coordinates.y) * CHUNK_SIZE;
+
+				if (threads.has(chunk_coordinates)) {
+					const Ref<core_bind::Thread> thread = cast_to<core_bind::Thread>(threads[chunk_coordinates]);
+					if (!thread->is_alive()) {
+						MeshInstance3D* chunk = cast_to<MeshInstance3D>(thread->wait_to_finish());
+						generated_chunks[chunk_coordinates] = chunk;
+						threads.erase(chunk_coordinates);
+						
+						chunk->set_position(chunk_position);
 					}
-					const int detail = detail_offsets[ring];
-					const Vector3 chunk_coordinates{x + x_offset, y + y_offset, static_cast<real_t>(detail)};
-					const Vector3 chunk_position = Vector3(chunk_coordinates.x, 0.0f, chunk_coordinates.y) * CHUNK_SIZE;
+				} else if (!generated_chunks.has(chunk_coordinates)) {
+					const Ref<core_bind::Thread> thread = memnew(core_bind::Thread);
+					threads[chunk_coordinates] = thread;
 
-					if (threads.has(chunk_coordinates)) {
-						const Ref<core_bind::Thread> thread = cast_to<core_bind::Thread>(threads[chunk_coordinates]);
-						if (!thread->is_alive()) {
-							MeshInstance3D* chunk = cast_to<MeshInstance3D>(thread->wait_to_finish());
-							generated_chunks[chunk_coordinates] = chunk;
-							threads.erase(chunk_coordinates);
-							
-							chunk->set_position(chunk_position);
-						}
-					} else if (!generated_chunks.has(chunk_coordinates)) {
-						const Ref<core_bind::Thread> thread = memnew(core_bind::Thread);
-						threads[chunk_coordinates] = thread;
+					const Ref<ProceduralTerrainParameters> parameters = get_terrain_parameters()->duplicate(true);
+					const Ref<FastNoiseLite> noise = parameters->get_noise();
+					noise->set_offset(noise->get_offset() + Vector3{chunk_position.z, -chunk_position.x, 0.0f});
 
-						const Ref<ProceduralTerrainParameters> parameters = get_terrain_parameters()->duplicate(true);
-						const Ref<FastNoiseLite> noise = parameters->get_noise();
-						noise->set_offset(noise->get_offset() + Vector3{chunk_position.z, -chunk_position.x, 0.0f});
+					thread->start(callable_mp_static(generate_terrain).bind(parameters, true, mode));
+				}
 
-						thread->start(callable_mp_static(generate_terrain).bind(parameters));
-					}
-
-					if (generated_chunks.has(chunk_coordinates)) {
-						MeshInstance3D* chunk = cast_to<MeshInstance3D>(generated_chunks[chunk_coordinates]);
-						add_child(chunk, false, INTERNAL_MODE_BACK);
-						visible_chunks.append(chunk);
-					}
+				if (generated_chunks.has(chunk_coordinates)) {
+					MeshInstance3D* chunk = cast_to<MeshInstance3D>(generated_chunks[chunk_coordinates]);
+					add_child(chunk, false, INTERNAL_MODE_BACK);
+					visible_chunks.append(chunk);
 				}
 			}
 		}
 	}
 }
 
-MeshInstance3D* ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainParameters>& parameters) {
+MeshInstance3D* ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainParameters>& parameters, const bool collision, const GenerationMode mode) {
 	ERR_FAIL_NULL_V_MSG(parameters, nullptr, "ProceduralTerrainParameters must be non-mull.");
 	ERR_FAIL_COND_V_MSG(!parameters->has_valid_subresources(), nullptr, "ProceduralTerrainParameters are missing one or more valid subresources.");
 
@@ -132,12 +144,11 @@ MeshInstance3D* ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainP
 	const auto scale = parameters->get_height_scale();
 	const auto flatshaded = parameters->get_flatshaded();
 	const auto color_map = parameters->get_color_map();
-	const auto mode = parameters->get_generation_mode();
 
 	Array matrix;
 	const Array falloff = generate_falloff(parameters->get_falloff());
 	
-	if (mode == ProceduralTerrainParameters::GenerationMode::GENERATION_MODE_FALLOFF) {
+	if (mode == GENERATION_MODE_FALLOFF) {
 		matrix = falloff;
 	} else {
 		matrix = generate_matrix(octaves, noise, persistence, lacunarity);
@@ -146,7 +157,7 @@ MeshInstance3D* ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainP
 
 	Ref<Mesh> mesh;
 	
-	if (mode == ProceduralTerrainParameters::GenerationMode::GENERATION_MODE_NORMAL) {
+	if (mode == GENERATION_MODE_NORMAL) {
 		mesh = flatshaded ?  generate_flatshaded_mesh(matrix, lod, curve, scale) : generate_mesh(matrix, lod, curve, scale);
 	} else {
 		const Ref<PlaneMesh> plane = memnew(PlaneMesh);
@@ -158,6 +169,11 @@ MeshInstance3D* ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainP
 
 	terrain->set_material_override(material);
 	terrain->set_mesh(mesh);
+
+	if (collision) {
+		StaticBody3D* collider = generate_collision(mesh);
+		terrain->add_child(collider);
+	}
 	
 	return terrain;
 }
@@ -443,6 +459,20 @@ void ProceduralTerrain::apply_falloff(Array matrix, const Array& falloff) {
 			index++;
 		}
 	}
+}
+
+StaticBody3D* ProceduralTerrain::generate_collision(const Ref<Mesh>& mesh) {
+	core_bind::Thread::set_thread_safety_checks_enabled(false);
+	
+	StaticBody3D *body = memnew(StaticBody3D);
+	CollisionShape3D *collision = memnew(CollisionShape3D);
+	const Ref<ConcavePolygonShape3D> shape = mesh->create_trimesh_shape();
+	collision->set_shape(shape);
+	body->add_child(collision, false, INTERNAL_MODE_BACK);
+	
+	core_bind::Thread::set_thread_safety_checks_enabled(true);
+
+	return body;
 }
 
 Ref<StandardMaterial3D> ProceduralTerrain::generate_material(const Array& matrix, const Ref<Gradient>& color_map) {
