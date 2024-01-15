@@ -17,7 +17,17 @@ struct Vector2;
 
 class ProceduralTerrain : public Node3D {
     GDCLASS(ProceduralTerrain, Node3D);
-    
+
+public:
+    enum GenerationMode {
+        GENERATION_MODE_NORMAL,
+        GENERATION_MODE_FALLOFF,
+        GENERATION_MODE_NOISE_UNSHADED,
+        GENERATION_MODE_NOISE_SHADED,
+    };
+
+private:
+    GenerationMode mode;
     NodePath viewer;
     PackedInt32Array detail_offsets;
     Ref<ProceduralTerrainParameters> terrain_parameters;
@@ -25,9 +35,11 @@ class ProceduralTerrain : public Node3D {
     Array visible_chunks;
     Dictionary generated_chunks;
     Dictionary threads;
-
     
 public:
+    void set_generation_mode(GenerationMode p_mode) { mode = p_mode; clear_chunks(); }
+    GenerationMode get_generation_mode() const { return mode; }
+    
     void set_viewer(const NodePath& p_observer) { viewer = p_observer; clear_chunks(); }
     NodePath get_viewer() const { return viewer; }
     
@@ -46,10 +58,10 @@ public:
     }
     Ref<ProceduralTerrainParameters> get_terrain_parameters() const { return terrain_parameters; }
     
-    static MeshInstance3D* generate_terrain(const Ref<ProceduralTerrainParameters>& parameters);
+    static MeshInstance3D* generate_terrain(const Ref<ProceduralTerrainParameters>& parameters, GenerationMode mode);
     
     void clear_chunks();
-    ProceduralTerrain() { set_process_internal(true); }
+    ProceduralTerrain() { set_process_internal(true); mode = GENERATION_MODE_NORMAL; }
     ~ProceduralTerrain() override { clear_chunks(); }
 
 protected:
@@ -67,5 +79,7 @@ private:
     static void apply_falloff(Array matrix, const Array& falloff);
     static StaticBody3D* generate_collision(const Ref<Mesh>& mesh);
 };
+
+VARIANT_ENUM_CAST(ProceduralTerrain::GenerationMode);
 
 #endif
