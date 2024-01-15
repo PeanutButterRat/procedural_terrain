@@ -40,7 +40,7 @@ void ProceduralTerrain::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_terrain_parameters"), &get_terrain_parameters);
 	
 	ClassDB::bind_method(D_METHOD("clear_chunks"), &clear_chunks);
-	ClassDB::bind_static_method("ProceduralTerrain", D_METHOD("generate_terrain", "parameters", "mode"), &generate_terrain, DEFVAL(GENERATION_MODE_NORMAL));
+	ClassDB::bind_static_method("ProceduralTerrain", D_METHOD("generate_terrain", "parameters", "collision", "mode"), &generate_terrain, DEFVAL(true), DEFVAL(GENERATION_MODE_NORMAL));
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "generation_mode", PROPERTY_HINT_ENUM, "Normal,Falloff,Noise Unshaded,Noise Shaded"), "set_generation_mode", "get_generation_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "viewer", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D"), "set_viewer", "get_viewer");
@@ -116,7 +116,7 @@ void ProceduralTerrain::_internal_process() {
 					const Ref<FastNoiseLite> noise = parameters->get_noise();
 					noise->set_offset(noise->get_offset() + Vector3{chunk_position.z, -chunk_position.x, 0.0f});
 
-					thread->start(callable_mp_static(generate_terrain).bind(parameters, mode));
+					thread->start(callable_mp_static(generate_terrain).bind(parameters, true, mode));
 				}
 
 				if (generated_chunks.has(chunk_coordinates)) {
@@ -129,7 +129,7 @@ void ProceduralTerrain::_internal_process() {
 	}
 }
 
-MeshInstance3D* ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainParameters>& parameters, const GenerationMode mode) {
+MeshInstance3D* ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainParameters>& parameters, const bool collision, const GenerationMode mode) {
 	ERR_FAIL_NULL_V_MSG(parameters, nullptr, "ProceduralTerrainParameters must be non-mull.");
 	ERR_FAIL_COND_V_MSG(!parameters->has_valid_subresources(), nullptr, "ProceduralTerrainParameters are missing one or more valid subresources.");
 
@@ -170,8 +170,10 @@ MeshInstance3D* ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainP
 	terrain->set_material_override(material);
 	terrain->set_mesh(mesh);
 
-	StaticBody3D* collider = generate_collision(mesh);
-	terrain->add_child(collider);
+	if (collision) {
+		StaticBody3D* collider = generate_collision(mesh);
+		terrain->add_child(collider);
+	}
 	
 	return terrain;
 }

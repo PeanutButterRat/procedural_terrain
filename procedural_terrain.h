@@ -58,7 +58,7 @@ public:
     }
     Ref<ProceduralTerrainParameters> get_terrain_parameters() const { return terrain_parameters; }
     
-    static MeshInstance3D* generate_terrain(const Ref<ProceduralTerrainParameters>& parameters, GenerationMode mode);
+    static MeshInstance3D* generate_terrain(const Ref<ProceduralTerrainParameters>& parameters, bool collision, GenerationMode mode);
     
     void clear_chunks();
     ProceduralTerrain() { set_process_internal(true); mode = GENERATION_MODE_NORMAL; }
