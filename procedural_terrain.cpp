@@ -1,12 +1,15 @@
 #include "procedural_terrain.h"
 
-
 #include "scene/resources/curve.h"
 #include "scene/resources/texture.h"
 #include "scene/resources/surface_tool.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/primitive_meshes.h"
+#include "scene/resources/concave_polygon_shape_3d.h"
+
 #include "scene/3d/mesh_instance_3d.h"
+#include "scene/3d/collision_shape_3d.h"
+#include "scene/3d/physics_body_3d.h"
 
 #include "core/math/random_number_generator.h"
 #include "core/math/math_funcs.h"
@@ -158,6 +161,9 @@ MeshInstance3D* ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainP
 
 	terrain->set_material_override(material);
 	terrain->set_mesh(mesh);
+
+	StaticBody3D* collider = generate_collision(mesh);
+	terrain->add_child(collider);
 	
 	return terrain;
 }
@@ -443,6 +449,17 @@ void ProceduralTerrain::apply_falloff(Array matrix, const Array& falloff) {
 			index++;
 		}
 	}
+}
+
+StaticBody3D* ProceduralTerrain::generate_collision(const Ref<Mesh>& mesh) {
+	StaticBody3D *body = memnew(StaticBody3D);
+	CollisionShape3D *collision = memnew(CollisionShape3D);
+	const Ref<ConcavePolygonShape3D> shape = mesh->create_trimesh_shape();
+	collision->set_shape(shape);
+	body->call_deferred("add_child", collision, false, INTERNAL_MODE_BACK);
+	// Deferred because Godot gets upset for some reason when calling add_child even though node is not in the scene tree yet.
+
+	return body;
 }
 
 Ref<StandardMaterial3D> ProceduralTerrain::generate_material(const Array& matrix, const Ref<Gradient>& color_map) {

@@ -1,17 +1,18 @@
 ﻿#ifndef PROCEDURAL_TERRAIN_H
 #define PROCEDURAL_TERRAIN_H
 
-
-#include "procedural_terrain_parameters.h"
 #include "scene/3d/node_3d.h"
 
+#include "procedural_terrain_parameters.h"
+
 class MeshInstance3D;
+class StaticBody3D;
+class CollisionShape3D;
 class Node3D;
 class Curve;
 class Texture;
 class FastNoiseLite;
 struct Vector2;
-class ProceduralTerrainParameters;
 
 
 class ProceduralTerrain : public Node3D {
@@ -64,6 +65,7 @@ private:
     static Ref<StandardMaterial3D> generate_material(const Array& matrix, const Ref<Gradient>& color_map);
     static Array generate_falloff(Vector2 falloff);
     static void apply_falloff(Array matrix, const Array& falloff);
+    static StaticBody3D* generate_collision(const Ref<Mesh>& mesh);
 };
 
 #endif

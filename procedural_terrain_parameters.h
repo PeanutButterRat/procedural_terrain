@@ -1,7 +1,6 @@
 ﻿#ifndef PROCEDURAL_TERRAIN_PARAMETERS_H
 #define PROCEDURAL_TERRAIN_PARAMETERS_H
 
-
 #include "modules/noise/fastnoise_lite.h"
 
 #include "scene/resources/curve.h"
