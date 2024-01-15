@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ProceduralTerrainParameters" inherits="Resource" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		A set of parameters for generating procedural terrain.
+	</brief_description>
+	<description>
+		Parameters for use with ProceduralTerrain to generate different 3D geometry.
+		Full source code is available at https://github.com/PeanutButterRat/procedural_terrain.
+	</description>
+	<tutorials>
+		<link title="Procedural Landmass Generation by Sebastian Lague">https://www.youtube.com/watch?v=wbpMiKiSKm8&list=PLFt_AvWsXl0eBW2EiBtl_sxmDtSgZBxB3</link>
+	</tutorials>
+	<members>
+		<member name="color_map" type="Gradient" setter="set_color_map" getter="get_color_map">
+			Color applied to each point of the mesh based on the height. Left side of gradient maps to low points and right side maps to high points.
+		</member>
+		<member name="falloff" type="Vector2" setter="set_falloff" getter="get_falloff" default="Vector2(0, 0)">
+			Parameters describing the curve used for falloff. The values produced by the falloff will be subtracted from the final mesh and can be used to generate land masses such as islands.
+		</member>
+		<member name="flatshaded" type="bool" setter="set_flatshaded" getter="get_flatshaded" default="false">
+			If true, mesh will be generated in a flat shaded style.
+		</member>
+		<member name="height_curve" type="Curve" setter="set_height_curve" getter="get_height_curve">
+			Similar to the color map but specifies a scale factor for point height instead of color. Points that are lower will be multiplied by the left of the curve and vice versa.
+		</member>
+		<member name="height_scale" type="float" setter="set_height_scale" getter="get_height_scale" default="10.0">
+			Scale factor for the height of every point in the mesh.
+		</member>
+		<member name="lacunarity" type="float" setter="set_lacunarity" getter="get_lacunarity" default="1.0">
+			Measure of detail or frequency for each octave. Higher lacunarity results in heigher frequency for each octave.
+		</member>
+		<member name="noise" type="FastNoiseLite" setter="set_noise" getter="get_noise">
+			Noise used for sampling when generating the mesh.
+		</member>
+		<member name="octaves" type="int" setter="set_octaves" getter="get_octaves" default="1">
+			Number of noise layers applied to each point.
+		</member>
+		<member name="persistence" type="float" setter="set_persistence" getter="get_persistence" default="1.0">
+			Measure of impact each subsequent octave has on the final mesh. Lower lacunarity results in smaller changes to the final mesh for each octave past the first one.
+		</member>
+	</members>
+	<constants>
+		<constant name="MIN_LEVEL_OF_DETAIL" value="0">
+			Minimum or lowest mesh resolution that can be terrain generated with.
+		</constant>
+		<constant name="MAX_LEVEL_OF_DETAIL" value="6">
+			Maximum or highest mesh resolution that can be terrain generated with.
+		</constant>
+		<constant name="MIN_OCTAVES" value="1">
+			Smallest number of octaves applicable to terrain generation.
+		</constant>
+		<constant name="MAX_OCTAVES" value="10">
+			Maximum number of octaves applicable to terrain generation.
+		</constant>
+	</constants>
+</class>
