@@ -6,6 +6,7 @@
 #include "scene/resources/surface_tool.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/primitive_meshes.h"
+#include "scene/3d/mesh_instance_3d.h"
 
 #include "core/math/random_number_generator.h"
 #include "core/math/math_funcs.h"
@@ -13,7 +14,6 @@
 #include "core/core_bind.h"
 
 #include "procedural_terrain_parameters.h"
-#include "procedural_terrain_chunk.h"
 
 constexpr int MATRIX_SIZE = 241;
 constexpr int CHUNK_SIZE = MATRIX_SIZE - 1;
@@ -34,29 +34,25 @@ void ProceduralTerrain::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_terrain_parameters"), &ProceduralTerrain::get_terrain_parameters);
 	
 	ClassDB::bind_method(D_METHOD("clear_chunks"), &ProceduralTerrain::clear_chunks);
-	ClassDB::bind_static_method("ProceduralTerrain", D_METHOD("generate_terrain", "parameters", "material"), &generate_terrain, DEFVAL(Ref<StandardMaterial3D>{}));
+	ClassDB::bind_static_method("ProceduralTerrain", D_METHOD("generate_terrain", "parameters"), &generate_terrain);
 	
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "viewer", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D"), "set_viewer", "get_viewer");
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_FLOAT32_ARRAY, "detail_offsets"), "set_detail_offsets", "get_detail_offsets");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "parameters", PROPERTY_HINT_RESOURCE_TYPE, "ProceduralTerrainParameters"), "set_terrain_parameters", "get_terrain_parameters");
 }
 
-ProceduralTerrain::ProceduralTerrain() {
-	set_process_internal(true);
-}
-
-void ProceduralTerrain::_notification(const int p_what) {
-	if (p_what == NOTIFICATION_INTERNAL_PROCESS) {
-		_internal_process();
-	}
-}
-
 void ProceduralTerrain::clear_chunks() {
-	const Array chunks = generated_chunks.values();
-	
-	for (int i = 0; i < chunks.size(); i++) {
-		ProceduralTerrainChunk* chunk = cast_to<ProceduralTerrainChunk>(chunks[i]);
+	Array values = threads.values();
+	for (int i = 0; i < values.size(); i++) {
+		const Ref<core_bind::Thread> thread = values[i];
+		MeshInstance3D* chunk = cast_to<MeshInstance3D>(thread->wait_to_finish());
 		chunk->queue_free();
+	}
+
+	values = generated_chunks.values();
+	for (int i = 0; i < values.size(); i++) {
+		MeshInstance3D* chunk = cast_to<MeshInstance3D>(values[i]);
+		if (chunk) { chunk->queue_free(); }
 	}
 	
 	generated_chunks.clear();
@@ -65,8 +61,8 @@ void ProceduralTerrain::clear_chunks() {
 
 void ProceduralTerrain::_internal_process() {
 	for (int i = 0; i < visible_chunks.size(); i++) {
-		ProceduralTerrainChunk* chunk = cast_to<ProceduralTerrainChunk>(visible_chunks[i]);
-		chunk->set_visible(false);
+		MeshInstance3D* chunk = cast_to<MeshInstance3D>(visible_chunks[i]);
+		remove_child(chunk);
 	}
 	
 	visible_chunks.clear();
@@ -86,71 +82,87 @@ void ProceduralTerrain::_internal_process() {
 					if (ABS(y_offset) != ring && ABS(x_offset) != ring) {
 						continue;
 					}
-					const Vector2 chunk_coordinates{x + x_offset, y + y_offset};
-					
-					if (!generated_chunks.has(chunk_coordinates)) {
-						ProceduralTerrainChunk* chunk = memnew(ProceduralTerrainChunk);
-						generated_chunks[chunk_coordinates] = chunk;
-						add_child(chunk, false, INTERNAL_MODE_BACK);
-						
-						const Vector2 chunk_position = chunk_coordinates * CHUNK_SIZE;
-						chunk->set_position(Vector3(chunk_position.x, 0, chunk_position.y));
+					const int detail = detail_offsets[ring];
+					const Vector3 chunk_coordinates{x + x_offset, y + y_offset, static_cast<real_t>(detail)};
+					const Vector3 chunk_position = Vector3(chunk_coordinates.x, 0.0f, chunk_coordinates.y) * CHUNK_SIZE;
+
+					if (threads.has(chunk_coordinates)) {
+						const Ref<core_bind::Thread> thread = cast_to<core_bind::Thread>(threads[chunk_coordinates]);
+						if (!thread->is_alive()) {
+							MeshInstance3D* chunk = cast_to<MeshInstance3D>(thread->wait_to_finish());
+							generated_chunks[chunk_coordinates] = chunk;
+							threads.erase(chunk_coordinates);
+							
+							chunk->set_position(chunk_position);
+						}
+					} else if (!generated_chunks.has(chunk_coordinates)) {
+						const Ref<core_bind::Thread> thread = memnew(core_bind::Thread);
+						threads[chunk_coordinates] = thread;
+
+						const Ref<ProceduralTerrainParameters> parameters = get_terrain_parameters()->duplicate(true);
+						const Ref<FastNoiseLite> noise = parameters->get_noise();
+						noise->set_offset(noise->get_offset() + Vector3{chunk_position.z, -chunk_position.x, 0.0f});
+
+						thread->start(callable_mp_static(generate_terrain).bind(parameters));
 					}
-				
-					ProceduralTerrainChunk* chunk = cast_to<ProceduralTerrainChunk>(generated_chunks[chunk_coordinates]);
-					
-					chunk->request_mesh(detail_offsets[ring]);
-					chunk->set_visible(true);
-					visible_chunks.append(chunk);
+
+					if (generated_chunks.has(chunk_coordinates)) {
+						MeshInstance3D* chunk = cast_to<MeshInstance3D>(generated_chunks[chunk_coordinates]);
+						add_child(chunk, false, INTERNAL_MODE_BACK);
+						visible_chunks.append(chunk);
+					}
 				}
 			}
 		}
 	}
 }
 
-Ref<Mesh> ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainParameters>& parameters, const Ref<StandardMaterial3D>& material) {
-	ERR_FAIL_NULL_V(parameters, nullptr);
-	ERR_FAIL_COND_V_MSG(parameters->has_valid_subresources() == false, nullptr, "Terrain parameters has a null subresource.");
+MeshInstance3D* ProceduralTerrain::generate_terrain(const Ref<ProceduralTerrainParameters>& parameters) {
+	ERR_FAIL_NULL_V_MSG(parameters, nullptr, "ProceduralTerrainParameters must be non-mull.");
+	ERR_FAIL_COND_V_MSG(!parameters->has_valid_subresources(), nullptr, "ProceduralTerrainParameters are missing one or more valid subresources.");
+
+	MeshInstance3D* terrain = memnew(MeshInstance3D);
 	
+	const auto octaves = parameters->get_octaves();
+	const auto noise = parameters->get_noise();
+	const auto persistence = parameters->get_persistence();
+	const auto lacunarity = parameters->get_lacunarity();
+	const auto lod = parameters->get_level_of_detail();
+	const auto curve = parameters->get_height_curve();
+	const auto scale = parameters->get_height_scale();
+	const auto flatshaded = parameters->get_flatshaded();
+	const auto color_map = parameters->get_color_map();
+	const auto mode = parameters->get_generation_mode();
+
 	Array matrix;
+	const Array falloff = generate_falloff(parameters->get_falloff());
+	
+	if (mode == ProceduralTerrainParameters::GenerationMode::GENERATION_MODE_FALLOFF) {
+		matrix = falloff;
+	} else {
+		matrix = generate_matrix(octaves, noise, persistence, lacunarity);
+		apply_falloff(matrix, falloff);
+	}
+
 	Ref<Mesh> mesh;
-	Ref<Gradient> color_map;
 	
-	switch (parameters->get_generation_mode()) {
-		case ProceduralTerrainParameters::GenerationMode::GENERATION_MODE_NORMAL:
-			matrix = _generate_matrix(parameters->get_octaves(), parameters->get_noise(), parameters->get_persistence(), parameters->get_lacunarity());
-			_apply_falloff(matrix, _generate_falloff(parameters->get_falloff()));
-			color_map = parameters->get_color_map();
-			mesh = parameters->get_flatshaded() ? _generate_flatshaded_noise_mesh(matrix, parameters->get_level_of_detail(), parameters->get_height_curve(), parameters->get_height_scale()) :
-				_generate_noise_mesh(matrix, parameters->get_level_of_detail(), parameters->get_height_curve(), parameters->get_height_scale());
-			break;
-		case ProceduralTerrainParameters::GenerationMode::GENERATION_MODE_FALLOFF:
-			matrix = _generate_falloff(parameters->get_falloff());
-			color_map.instantiate();
-			mesh = _generate_plane_mesh();
-			break;
-		case ProceduralTerrainParameters::GenerationMode::GENERATION_MODE_NOISE_SHADED:
-			matrix = _generate_matrix(parameters->get_octaves(), parameters->get_noise(), parameters->get_persistence(), parameters->get_lacunarity());
-			_apply_falloff(matrix, _generate_falloff(parameters->get_falloff()));
-			color_map = parameters->get_color_map();
-			mesh = _generate_plane_mesh();
-			break;
-		case ProceduralTerrainParameters::GenerationMode::GENERATION_MODE_NOISE_UNSHADED:
-			matrix = _generate_matrix(parameters->get_octaves(), parameters->get_noise(), parameters->get_persistence(), parameters->get_lacunarity());
-			_apply_falloff(matrix, _generate_falloff(parameters->get_falloff()));
-			color_map.instantiate();
-			mesh = _generate_plane_mesh();
-			break;
+	if (mode == ProceduralTerrainParameters::GenerationMode::GENERATION_MODE_NORMAL) {
+		mesh = flatshaded ?  generate_flatshaded_mesh(matrix, lod, curve, scale) : generate_mesh(matrix, lod, curve, scale);
+	} else {
+		const Ref<PlaneMesh> plane = memnew(PlaneMesh);
+		plane->set_size(Vector2{CHUNK_SIZE, CHUNK_SIZE});
+		mesh = plane;
 	}
 	
-	if (material.is_valid()) {
-		_generate_material(matrix, color_map, material);
-	}
+	const Ref<StandardMaterial3D> material = generate_material(matrix, color_map);
+
+	terrain->set_material_override(material);
+	terrain->set_mesh(mesh);
 	
-	return mesh;
+	return terrain;
 }
 
-Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoiseLite>& noise, const real_t persistence, const real_t lacunarity) {
+Array ProceduralTerrain::generate_matrix(const int octaves, const Ref<FastNoiseLite>& noise, const real_t persistence, const real_t lacunarity) {
 	Array matrix{};
 	matrix.resize(MATRIX_SIZE * MATRIX_SIZE);
 	Array offsets{};
@@ -208,7 +220,7 @@ Array ProceduralTerrain::_generate_matrix(const int octaves, const Ref<FastNoise
 	return matrix;
 }
 
-Ref<Mesh> ProceduralTerrain::_generate_noise_mesh(const Array& matrix, const int level_of_detail, const Ref<Curve>& height_curve, const real_t height_scale) {
+Ref<Mesh> ProceduralTerrain::generate_mesh(const Array& matrix, const int level_of_detail, const Ref<Curve>& height_curve, const real_t height_scale) {
 	const int increment = CLAMP((MAX_LEVEL_OF_DETAIL - level_of_detail) * 2, 1, 12);
 	const int vertices_per_line = (MATRIX_SIZE - 1) / increment + 1;
 
@@ -283,7 +295,7 @@ Ref<Mesh> ProceduralTerrain::_generate_noise_mesh(const Array& matrix, const int
 	return mesh;
 }
 
-Ref<Mesh> ProceduralTerrain::_generate_flatshaded_noise_mesh(const Array& matrix, int level_of_detail, const Ref<Curve>& height_curve, const real_t height_scale) {
+Ref<Mesh> ProceduralTerrain::generate_flatshaded_mesh(const Array& matrix, int level_of_detail, const Ref<Curve>& height_curve, const real_t height_scale) {
 	const int increment = CLAMP((MAX_LEVEL_OF_DETAIL - level_of_detail) * 2, 1, 12);
 	const int vertices_per_line = (MATRIX_SIZE - 1) / increment + 1;
 	
@@ -394,30 +406,7 @@ Ref<Mesh> ProceduralTerrain::_generate_flatshaded_noise_mesh(const Array& matrix
 	return mesh;
 }
 
-Ref<Mesh> ProceduralTerrain::_generate_plane_mesh() {
-	Ref<PlaneMesh> mesh{};
-	mesh.instantiate();
-	mesh->set_size(Vector2{CHUNK_SIZE, CHUNK_SIZE});
-	
-	return mesh;
-}
-
-void ProceduralTerrain::_generate_material(const Array& matrix, const Ref<Gradient>& color_map, const Ref<StandardMaterial3D>& material) {
-	const Ref<Image> image = Image::create_empty(MATRIX_SIZE, MATRIX_SIZE, false, Image::FORMAT_RGB8);
-	for (int y = 0; y < MATRIX_SIZE; y++) {
-		for (int x = 0; x < MATRIX_SIZE; x++) {
-			const real_t height = matrix[y * MATRIX_SIZE + x];
-			Color color = color_map->get_color_at_offset(height);
-			image->set_pixel(x, y, color);
-		}
-	}
-	
-	const Ref<Texture> texture = ImageTexture::create_from_image(image);
-	
-	material->set_texture(StandardMaterial3D::TextureParam::TEXTURE_ALBEDO, texture);
-}
-
-Array ProceduralTerrain::_generate_falloff(const Vector2 falloff) {
+Array ProceduralTerrain::generate_falloff(const Vector2 falloff) {
 	Array map{};
 	map.resize(MATRIX_SIZE * MATRIX_SIZE);
 	int index = 0;
@@ -444,7 +433,7 @@ Array ProceduralTerrain::_generate_falloff(const Vector2 falloff) {
 	return map;
 }
 
-void ProceduralTerrain::_apply_falloff(Array matrix, const Array& falloff) {
+void ProceduralTerrain::apply_falloff(Array matrix, const Array& falloff) {
 	int index = 0;
 	for (int y = 0; y < MATRIX_SIZE; y++) {
 		for (int x = 0; x < MATRIX_SIZE; x++) {
@@ -454,4 +443,22 @@ void ProceduralTerrain::_apply_falloff(Array matrix, const Array& falloff) {
 			index++;
 		}
 	}
+}
+
+Ref<StandardMaterial3D> ProceduralTerrain::generate_material(const Array& matrix, const Ref<Gradient>& color_map) {
+	const Ref<Image> image = Image::create_empty(MATRIX_SIZE, MATRIX_SIZE, false, Image::FORMAT_RGB8);
+	for (int y = 0; y < MATRIX_SIZE; y++) {
+		for (int x = 0; x < MATRIX_SIZE; x++) {
+			const real_t height = matrix[y * MATRIX_SIZE + x];
+			Color color = color_map->get_color_at_offset(height);
+			image->set_pixel(x, y, color);
+		}
+	}
+	
+	const Ref<Texture> texture = ImageTexture::create_from_image(image);
+	const Ref<StandardMaterial3D> material = memnew(StandardMaterial3D);
+	material->set_texture(StandardMaterial3D::TextureParam::TEXTURE_ALBEDO, texture);
+	material->set_texture_filter(BaseMaterial3D::TEXTURE_FILTER_NEAREST);
+
+	return material;
 }
