@@ -80,6 +80,10 @@ void ProceduralTerrain::_internal_process() {
 	
 	visible_chunks.clear();
 
+	if (terrain_parameters.is_null() || !terrain_parameters->has_valid_subresources()) {
+		return;
+	}
+
 	const Node3D* observer = cast_to<Node3D>(get_node_or_null(viewer));
 	const Vector2 relative_observer_position {
 		observer ? (observer->get_global_position() - get_global_position()).x : 0.0f,
