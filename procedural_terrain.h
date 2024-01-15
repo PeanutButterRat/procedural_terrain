@@ -11,7 +11,6 @@ class Curve;
 class Texture;
 class FastNoiseLite;
 struct Vector2;
-class ProceduralTerrainChunk;
 class ProceduralTerrainParameters;
 
 
@@ -24,6 +23,7 @@ class ProceduralTerrain : public Node3D {
     
     Array visible_chunks;
     Dictionary generated_chunks;
+    Dictionary threads;
 
     
 public:
@@ -39,40 +39,31 @@ public:
     PackedInt32Array get_detail_offsets() const { return detail_offsets; }
     
     void set_terrain_parameters(const  Ref<ProceduralTerrainParameters>& parameters) {
-        if (terrain_parameters.is_valid()) {
-            terrain_parameters->disconnect_changed(callable_mp(this, &ProceduralTerrain::clear_chunks));
-        }
-        
+        if (terrain_parameters.is_valid()) { terrain_parameters->disconnect_changed(callable_mp(this, &ProceduralTerrain::clear_chunks)); }
         terrain_parameters = parameters;
-
-        if (terrain_parameters.is_valid()) {
-            terrain_parameters->connect_changed(callable_mp(this, &ProceduralTerrain::clear_chunks));
-        }
+        if (terrain_parameters.is_valid()) { terrain_parameters->connect_changed(callable_mp(this, &ProceduralTerrain::clear_chunks)); }
     }
     Ref<ProceduralTerrainParameters> get_terrain_parameters() const { return terrain_parameters; }
     
-    static Ref<Mesh> generate_terrain_placeholder(const Ref<ProceduralTerrainParameters>& parameters, const Ref<StandardMaterial3D>& material);
     static MeshInstance3D* generate_terrain(const Ref<ProceduralTerrainParameters>& parameters);
     
     void clear_chunks();
-    ProceduralTerrain();
+    ProceduralTerrain() { set_process_internal(true); }
+    ~ProceduralTerrain() override { clear_chunks(); }
 
 protected:
     static void _bind_methods();
-    void _notification(int p_what);
+    void _notification(int p_what) { if (p_what == NOTIFICATION_INTERNAL_PROCESS) _internal_process(); }
 
 private:
     void _internal_process();
 
-    static Array _generate_matrix(int octaves, const Ref<FastNoiseLite>& noise, real_t persistence, real_t lacunarity);
-    static Ref<Mesh> _generate_noise_mesh(const Array& matrix, int level_of_detail, const Ref<Curve>& height_curve, real_t height_scale);
-    static Ref<Mesh> _generate_flatshaded_noise_mesh(const Array& matrix, int level_of_detail, const Ref<Curve>& height_curve, real_t height_scale);
-    static Ref<Mesh> _generate_plane_mesh();
-    static void ProceduralTerrain::_generate_material(const Array& matrix, const Ref<Gradient>& color_map, const Ref<StandardMaterial3D>& material);
-    static Array _generate_falloff(Vector2 falloff);
-    static void _apply_falloff(Array matrix, const Array& falloff);
-    
+    static Array generate_matrix(int octaves, const Ref<FastNoiseLite>& noise, real_t persistence, real_t lacunarity);
+    static Ref<Mesh> generate_mesh(const Array& matrix, int level_of_detail, const Ref<Curve>& height_curve, real_t height_scale);
+    static Ref<Mesh> generate_flatshaded_mesh(const Array& matrix, int level_of_detail, const Ref<Curve>& height_curve, real_t height_scale);
     static Ref<StandardMaterial3D> generate_material(const Array& matrix, const Ref<Gradient>& color_map);
+    static Array generate_falloff(Vector2 falloff);
+    static void apply_falloff(Array matrix, const Array& falloff);
 };
 
 #endif

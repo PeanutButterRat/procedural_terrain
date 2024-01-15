@@ -47,51 +47,33 @@ public:
         flatshaded = false;
     };
 
-    void set_generation_mode(GenerationMode mode) { generation_mode = mode; _update(); }
+    void set_generation_mode(GenerationMode mode) { generation_mode = mode; update(); }
     GenerationMode get_generation_mode() const { return generation_mode; }
     
     void set_noise(const Ref<FastNoiseLite> &p_noise) {
-        if (noise.is_valid()) {
-            noise->disconnect_changed(callable_mp(this, &ProceduralTerrainParameters::_update));
-        }
-
+        if (noise.is_valid()) { noise->disconnect_changed(callable_mp(this, &ProceduralTerrainParameters::update)); }
         noise = p_noise;
-
-        if (noise.is_valid()) {
-            noise->connect_changed(callable_mp(this, &ProceduralTerrainParameters::_update));
-        }
+        if (noise.is_valid()) { noise->connect_changed(callable_mp(this, &ProceduralTerrainParameters::update)); }
         
-        _update();
+        update();
     }
     Ref<FastNoiseLite> get_noise() const { return noise; }
     
     void set_height_curve(const Ref<Curve> &p_height_curve) {
-        if (height_curve.is_valid()) {
-            height_curve->disconnect_changed(callable_mp(this, &ProceduralTerrainParameters::_update));
-        }
-
+        if (height_curve.is_valid()) { height_curve->disconnect_changed(callable_mp(this, &ProceduralTerrainParameters::update)); }
         height_curve = p_height_curve;
-
-        if (height_curve.is_valid()) {
-            height_curve->connect_changed(callable_mp(this, &ProceduralTerrainParameters::_update));
-        }
+        if (height_curve.is_valid()) { height_curve->connect_changed(callable_mp(this, &ProceduralTerrainParameters::update)); }
         
-        _update();
+        update();
     }
     Ref<Curve> get_height_curve() const { return height_curve; };
 
     void set_color_map(const Ref<Gradient> &p_color_map) {
-        if (color_map.is_valid()) {
-            color_map->disconnect_changed(callable_mp(this, &ProceduralTerrainParameters::_update));
-        }
-
+        if (color_map.is_valid()) { color_map->disconnect_changed(callable_mp(this, &ProceduralTerrainParameters::update)); }
         color_map = p_color_map;
-
-        if (color_map.is_valid()) {
-            color_map->connect_changed(callable_mp(this, &ProceduralTerrainParameters::_update));
-        }
+        if (color_map.is_valid()) { color_map->connect_changed(callable_mp(this, &ProceduralTerrainParameters::update));}
         
-        _update();
+        update();
     }
     Ref<Gradient> get_color_map() const { return color_map; }
     
@@ -100,29 +82,29 @@ public:
             WARN_PRINT(String("Octaves must be within the range of") + MIN_OCTAVES + " and " + MAX_OCTAVES + ", value will be clamped.");
         }
         octaves = CLAMP(p_octaves, MIN_OCTAVES, MAX_OCTAVES);
-        _update();
+        update();
     }
     int get_octaves() const { return octaves; }
 
-    void set_level_of_detail(const int p_level_of_detail) { level_of_detail = p_level_of_detail; _update(); }
+    void set_level_of_detail(const int p_level_of_detail) { level_of_detail = p_level_of_detail; update(); }
     int get_level_of_detail() const { return level_of_detail; }
     
-    void set_lacunarity(const real_t p_lacunarity) { lacunarity = p_lacunarity; _update(); }
+    void set_lacunarity(const real_t p_lacunarity) { lacunarity = p_lacunarity; update(); }
     real_t get_lacunarity() const { return lacunarity; }
 
-    void set_persistence(const real_t p_persistence) { persistence = p_persistence; _update(); }
+    void set_persistence(const real_t p_persistence) { persistence = p_persistence; update(); }
     real_t get_persistence() const { return persistence; }
 
-    void set_height_scale(const real_t p_height_scale) { height_scale = p_height_scale; _update(); }
+    void set_height_scale(const real_t p_height_scale) { height_scale = p_height_scale; update(); }
     real_t get_height_scale() const { return height_scale; }
     
-    void set_falloff(const Vector2 p_falloff) { falloff = p_falloff; _update(); }
+    void set_falloff(const Vector2 p_falloff) { falloff = p_falloff; update(); }
     Vector2 get_falloff() const { return falloff; }
 
-    void set_flatshaded(const bool p_flatshaded) { flatshaded = p_flatshaded; _update(); }
+    void set_flatshaded(const bool p_flatshaded) { flatshaded = p_flatshaded; update(); }
     bool get_flatshaded() const { return flatshaded; }
     
-    bool has_valid_subresources() { return noise.is_valid() && height_curve.is_valid() && color_map.is_valid(); }
+    bool has_valid_subresources() const { return noise.is_valid() && height_curve.is_valid() && color_map.is_valid(); }
 
 protected:
     static void _bind_methods() {
@@ -179,7 +161,7 @@ protected:
     };
 
 private:
-    void _update() { emit_changed(); }
+    void update() { emit_changed(); }
 };
 
 VARIANT_ENUM_CAST(ProceduralTerrainParameters::GenerationMode);
