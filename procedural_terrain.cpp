@@ -462,12 +462,15 @@ void ProceduralTerrain::apply_falloff(Array matrix, const Array& falloff) {
 }
 
 StaticBody3D* ProceduralTerrain::generate_collision(const Ref<Mesh>& mesh) {
+	core_bind::Thread::set_thread_safety_checks_enabled(false);
+	
 	StaticBody3D *body = memnew(StaticBody3D);
 	CollisionShape3D *collision = memnew(CollisionShape3D);
 	const Ref<ConcavePolygonShape3D> shape = mesh->create_trimesh_shape();
 	collision->set_shape(shape);
-	body->call_deferred("add_child", collision, false, INTERNAL_MODE_BACK);
-	// Deferred because Godot gets upset for some reason when calling add_child even though node is not in the scene tree yet.
+	body->add_child(collision, false, INTERNAL_MODE_BACK);
+	
+	core_bind::Thread::set_thread_safety_checks_enabled(true);
 
 	return body;
 }
