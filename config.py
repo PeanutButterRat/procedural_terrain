@@ -14,3 +14,6 @@ def get_doc_classes():
         "ProceduralTerrainParameters",
 	"ProceduralTerrain",
     ]
+
+def get_icons_path():
+    return "icons"
